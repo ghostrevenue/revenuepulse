@@ -225,10 +225,11 @@ def distance(p1, p2):
     return math.sqrt((p1["x"] - p2["x"])**2 + (p1["y"] - p2["y"])**2)
 
 def init_data():
-    """Initialize data files if they don't exist"""
+    """Initialize data files if they don't exist or are empty"""
     
     # Initialize agents with Carson as root
-    if not AGENTS_FILE.exists():
+    agents = load_json(AGENTS_FILE, None)
+    if agents is None or agents == []:
         carson = {
             "id": "carson",
             "name": "Carson",
