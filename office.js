@@ -93,6 +93,60 @@ const AGENT_SIZE = 50;
 const WALL_THICKNESS = 12;
 const DOOR_WIDTH = 50;
 
+// ============================================================================
+// PIXEL ART ASSETS - Loaded from /sprites and /backgrounds
+// ============================================================================
+
+let pixelArtAssets = {
+  characters: null,
+  furniture: null,
+  background: null,
+  assetsLoaded: false
+};
+
+function loadPixelArtAssets() {
+  return new Promise((resolve) => {
+    let loaded = 0;
+    const total = 3;
+
+    function checkDone() {
+      loaded++;
+      if (loaded >= total) {
+        pixelArtAssets.assetsLoaded = true;
+        console.log('Pixel art assets loaded successfully');
+        resolve();
+      }
+    }
+
+    // Load character sprite sheet (LPC format - 16x32 characters)
+    pixelArtAssets.characters = new Image();
+    pixelArtAssets.characters.onload = checkDone;
+    pixelArtAssets.characters.onerror = () => {
+      console.warn('Failed to load characters sprite sheet');
+      checkDone();
+    };
+    pixelArtAssets.characters.src = '/sprites/lpc_all.png';
+
+    // Load furniture tileset
+    pixelArtAssets.furniture = new Image();
+    pixelArtAssets.furniture.onload = checkDone;
+    pixelArtAssets.furniture.onerror = () => {
+      console.warn('Failed to load furniture tileset');
+      checkDone();
+    };
+    pixelArtAssets.furniture.src = '/sprites/office_furniture.png';
+
+    // Load background/tilemap
+    pixelArtAssets.background = new Image();
+    pixelArtAssets.background.onload = checkDone;
+    pixelArtAssets.background.onerror = () => {
+      console.warn('Failed to load background');
+      checkDone();
+    };
+    pixelArtAssets.background.src = '/backgrounds/office_tilemap.png';
+  });
+}
+
 // Sprite data: each sprite is a 2D array of color keys or null
 // 8 wide x 12 tall for characters
 
@@ -412,32 +466,66 @@ function buildCharacterSprite(agent, frame = 0) {
 
 function drawAgentAvatar(agent, x, y, scale = PIXEL_SCALE) {
   if (!ctx) return;
-  
-  const frame = Date.now() % 1000 < 500 ? 0 : 1;
-  const sprite = buildCharacterSprite(agent, frame);
-  
-  const spriteWidth = 8 * scale;
-  const spriteHeight = 12 * scale;
-  
+
+  const spriteWidth = 16 * scale;  // LPC characters are 16 wide
+  const spriteHeight = 32 * scale; // LPC characters are 32 tall
+
   const drawX = x - spriteWidth / 2;
   const drawY = y - spriteHeight;
-  
+
+  // Draw shadow
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath();
-  ctx.ellipse(x, y + 2, spriteWidth / 3, 4, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y + 2, spriteWidth / 3, 6, 0, 0, Math.PI * 2);
   ctx.fill();
-  
-  drawPixelSprite(ctx, sprite, drawX, drawY, scale);
-  
+
+  // Use pixel art sprite if loaded, otherwise fallback to programmatic
+  if (pixelArtAssets.assetsLoaded && pixelArtAssets.characters) {
+    // LPC sprite sheet is 480x352, characters are 16x32
+    // Each row has 15 characters (480/16=15 columns), height is 352/32=11 rows
+    // Use agent name to deterministically select a character
+    const charIndex = Math.abs(agent.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 15;
+    const rowIndex = Math.abs(agent.name.charCodeAt(0) % 6); // Use first letter to vary row
+
+    const srcX = charIndex * 16;
+    const srcY = rowIndex * 32;
+
+    // Flip X for variety based on name length
+    if (agent.name.length % 2 === 0) {
+      ctx.save();
+      ctx.translate(drawX + spriteWidth, drawY);
+      ctx.scale(-1, 1);
+      ctx.drawImage(
+        pixelArtAssets.characters,
+        srcX, srcY, 16, 32,
+        0, 0, 16, 32
+      );
+      ctx.restore();
+    } else {
+      ctx.drawImage(
+        pixelArtAssets.characters,
+        srcX, srcY, 16, 32,
+        drawX, drawY, spriteWidth, spriteHeight
+      );
+    }
+  } else {
+    // Fallback to programmatic sprites
+    const frame = Date.now() % 1000 < 500 ? 0 : 1;
+    const sprite = buildCharacterSprite(agent, frame);
+    drawPixelSprite(ctx, sprite, drawX, drawY, scale);
+  }
+
+  // Status indicator
   const statusColor = COLORS[`status_${agent.status}`] || COLORS.status_idle;
   ctx.fillStyle = statusColor;
   ctx.fillRect(x - 4, drawY - 8, 8, 4);
-  
+
   ctx.shadowColor = statusColor;
   ctx.shadowBlur = 8;
   ctx.fillRect(x - 4, drawY - 8, 8, 4);
   ctx.shadowBlur = 0;
-  
+
+  // Agent name
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 10px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
@@ -536,9 +624,12 @@ function initOffice() {
     }
     
     loadOfficeData().then(() => {
-        officeLoaded = true;
-        canvasInitialized = true;
-        renderLoop();
+        // Load pixel art assets in parallel
+        loadPixelArtAssets().then(() => {
+            officeLoaded = true;
+            canvasInitialized = true;
+            renderLoop();
+        });
     });
     
     console.log('Office initialized');
@@ -687,14 +778,29 @@ function renderOffice() {
 
 function drawRoomFloors() {
     if (!officeData || !officeData.rooms) return;
-    
+
+    // Draw pixel art background if loaded (tiled)
+    if (pixelArtAssets.assetsLoaded && pixelArtAssets.background) {
+        const bg = pixelArtAssets.background;
+        const bgW = bg.width;
+        const bgH = bg.height;
+
+        // Tile the background across the entire office
+        for (let x = 0; x < OFFICE_WIDTH; x += bgW) {
+            for (let y = 0; y < OFFICE_HEIGHT; y += bgH) {
+                ctx.drawImage(bg, x, y);
+            }
+        }
+        return; // Skip programmatic floor drawing when background is loaded
+    }
+
     for (const room of officeData.rooms) {
         const floorColor = room.floor_color || room.color || COLORS.floor_alt;
-        
+
         // Draw base floor color
         ctx.fillStyle = floorColor;
         ctx.fillRect(room.x, room.y, room.width, room.height);
-        
+
         // Draw floor texture based on room type
         switch (room.type) {
             case 'department':

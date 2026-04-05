@@ -813,6 +813,14 @@ def serve_js():
 def serve_office_js():
     return FileResponse(str(BASE_DIR / "office.js"))
 
+@app.get("/sprites/{filename}")
+def serve_sprites(filename: str):
+    return FileResponse(str(BASE_DIR / "sprites" / filename))
+
+@app.get("/backgrounds/{filename}")
+def serve_backgrounds(filename: str):
+    return FileResponse(str(BASE_DIR / "backgrounds" / filename))
+
 # ============================================================================
 # Main
 # ============================================================================
