@@ -1,0 +1,35 @@
+[
+  {
+    "title": "Research AI agent capabilities",
+    "description": "Research latest developments in AI agents",
+    "assigned_to": "agent-research",
+    "status": "queued",
+    "priority": "high",
+    "id": "task-7ab3f459",
+    "created_at": "2026-04-05T05:11:54.071337",
+    "updated_at": "2026-04-05T05:11:54.071348",
+    "completed_at": null
+  },
+  {
+    "title": "Build AI feature",
+    "description": "Implement the new feature",
+    "assigned_to": "agent-coding",
+    "status": "queued",
+    "priority": "high",
+    "id": "task-8efe197d",
+    "created_at": "2026-04-05T05:23:22.274662",
+    "updated_at": "2026-04-05T05:23:22.274671",
+    "completed_at": null
+  },
+  {
+    "title": "Redesign AI Office in Stardew Valley / Terraria Pixel Art Style",
+    "description": "Use pre-made art and designs from the Internet. The office should look like a cozy Stardew Valley / Terraria style pixel art game with warm lighting, handcrafted feel. Include: proper walls with 3D depth, warm floor textures per room (carpet for offices, wood for meeting, tiles for break room), ambient corner glow effects, pixel art character sprites, desk layouts, door frames, plants and decorations. Colors: warm purples, teals, sage green, coral accents. Make agents clickable for chat interaction. Fix the metrics panel overlap issue.",
+    "assigned_to": null,
+    "status": "queued",
+    "priority": "high",
+    "id": "task-cdde68e2",
+    "created_at": "2026-04-05T18:47:00.466108",
+    "updated_at": "2026-04-05T18:47:00.466117",
+    "completed_at": null
+  }
+]

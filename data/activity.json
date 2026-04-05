@@ -1,0 +1,154 @@
+[
+  {
+    "id": "4846626f-6892-4c25-b755-ffea214cd974",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:57:05.361895"
+  },
+  {
+    "id": "2584ebcc-6120-44af-bfde-bcd30ccc18e9",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:57:04.661479"
+  },
+  {
+    "id": "7ebc2df7-eba3-45cd-aef1-d95f1e07233e",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_queued",
+    "details": "Message: Hello! What is 2+2?...",
+    "timestamp": "2026-04-05T22:57:02.275138"
+  },
+  {
+    "id": "f507cb9d-7943-4193-96cd-50597e139a1f",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:44:43.700779"
+  },
+  {
+    "id": "5a567b84-96af-4193-a98e-9ff6da39eaf9",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:44:45.870806"
+  },
+  {
+    "id": "520a01c3-ffed-4b21-aa01-0f73c73cfce2",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_queued",
+    "details": "Message: Hello! What is your name?...",
+    "timestamp": "2026-04-05T22:44:41.671612"
+  },
+  {
+    "id": "44fdd48d-9af3-4926-ba91-bdc2b53d23e2",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:41:34.553713"
+  },
+  {
+    "id": "177d87cf-c929-4100-aacd-eb4cec555de5",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:41:34.491149"
+  },
+  {
+    "id": "15859488-02b3-416c-9f21-73fc997223f7",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_queued",
+    "details": "Message: Hi! What is 2+2?...",
+    "timestamp": "2026-04-05T22:41:30.539625"
+  },
+  {
+    "id": "36271c1f-6077-4641-a32c-a7ee5d015835",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:40:40.999300"
+  },
+  {
+    "id": "c362f76b-7bfa-4f64-b4a1-3f11d00f6c16",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:40:38.843972"
+  },
+  {
+    "id": "02066d9e-64fe-4b4d-9a20-3d21ce531d90",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_response",
+    "details": "Response sent",
+    "timestamp": "2026-04-05T22:40:38.269400"
+  },
+  {
+    "id": "04debf0c-5e58-4e3a-aa1e-ca22c470d08d",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "chat_queued",
+    "details": "Message: Hello! How are you?...",
+    "timestamp": "2026-04-05T22:39:09.362882"
+  },
+  {
+    "id": "4de5bc34-8494-48e8-8a0f-2a15522f29ce",
+    "agent_id": "agent-c3044910",
+    "agent_name": "Test Agent",
+    "action": "created",
+    "details": "Role: assistant",
+    "timestamp": "2026-04-05T22:39:02.745795"
+  },
+  {
+    "id": "1c024064-66dd-4fb9-a5a7-3c3edd00866c",
+    "agent_id": "agent-research",
+    "agent_name": "Nova",
+    "action": "chat_queued",
+    "details": "Message: Hello Nova!...",
+    "timestamp": "2026-04-05T06:19:37.060887"
+  },
+  {
+    "id": "3b95e4e7-681c-4321-8da8-24671849b5f5",
+    "agent_id": "agent-research",
+    "agent_name": "Nova",
+    "action": "chat_queued",
+    "details": "Message: Hello Nova!...",
+    "timestamp": "2026-04-05T06:18:36.111687"
+  },
+  {
+    "id": "801a6c20-fb25-4227-b73e-8d700e724ea4",
+    "agent_id": "agent-research",
+    "agent_name": "Nova",
+    "action": "chat_queued",
+    "details": "Message: Hello Nova!...",
+    "timestamp": "2026-04-05T06:17:51.472469"
+  },
+  {
+    "id": "ae0f45c7-1cd7-4472-a7c4-4436bb2bb7a0",
+    "agent_id": "agent-coding",
+    "agent_name": "Byte",
+    "action": "task_assigned",
+    "details": "Build AI feature",
+    "timestamp": "2026-04-05T05:23:22.275472"
+  },
+  {
+    "id": "f715911a-1088-4599-8b93-569892c6ee9f",
+    "agent_id": "agent-research",
+    "agent_name": "Research Agent",
+    "action": "task_assigned",
+    "details": "Research AI agent capabilities",
+    "timestamp": "2026-04-05T05:11:54.072128"
+  }
+]

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Office - Mission Control</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+    <style>
+        /* View toggle */
+        .view-toggle {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .view-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        
+        .view-btn:hover {
+            border-color: var(--accent-amber);
+            color: var(--accent-amber);
+        }
+        
+        .view-btn.active {
+            border-color: var(--accent-amber);
+            background: rgba(217,160,102,0.15);
+            color: var(--accent-amber);
+        }
+        
+        /* Office view */
+        #officeView {
+            display: none;
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 110px);
+            background: var(--bg-dark);
+            overflow: hidden;
+        }
+        
+        #officeView.active {
+            display: block;
+        }
+        
+        #officeCanvas {
+            display: block;
+            margin: 20px auto;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            max-width: 100%;
+            max-height: calc(100vh - 160px);
+        }
+        
+        .office-controls {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        
+        .office-stats {
+            position: absolute;
+            right: 20px;
+            top: 60px;
+            background: rgba(245, 237, 224, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 160px;
+            z-index: 10;
+        }
+        
+        .office-stats h4 {
+            font-size: 10px;
+            color: var(--accent-amber);
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+        }
+        
+        .office-stats .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        
+        .office-stats .stat-row .label {
+            color: var(--text-secondary);
+        }
+        
+        .office-stats .stat-row .value {
+            color: var(--accent-amber);
+            font-weight: bold;
+        }
+        
+        .office-hint {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: rgba(245, 237, 224, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            z-index: 10;
+        }
+        
+        .office-hint span {
+            color: var(--accent-amber);
+        }
+        
+        /* Dashboard view grid adjustment */
+        .dashboard-view {
+            display: block;
+        }
+        
+        .dashboard-view.hidden {
+            display: none;
+        }
+        
+        #dashboardView {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+        }
+        
+        .office-controls {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        
+        .office-hint {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: rgba(245, 237, 224, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            z-index: 10;
+        }
+        
+        .office-hint span {
+            color: var(--accent-amber);
+        }
+        
+        .office-stats {
+            position: absolute;
+            right: 20px;
+            top: 60px;
+            background: rgba(245, 237, 224, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 160px;
+            z-index: 10;
+        }
+        
+        .office-stats h4 {
+            font-size: 10px;
+            color: var(--accent-amber);
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+        }
+        
+        .office-stats .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        
+        .office-stats .stat-row .label {
+            color: var(--text-secondary);
+        }
+        
+        .office-stats .stat-row .value {
+            color: var(--accent-amber);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">AI OFFICE</h1>
+                <span class="subtitle">Mission Control</span>
+            </div>
+            <div class="header-right">
+                <div class="view-toggle">
+                    <button class="view-btn active" onclick="switchView('dashboard')" id="dashboardBtn">📊 DASHBOARD</button>
+                    <button class="view-btn" onclick="switchView('office')" id="officeBtn">🏢 OFFICE</button>
+                </div>
+                <div class="status-indicator">
+                    <span class="dot online"></span>
+                    <span>SYSTEMS ONLINE</span>
+                </div>
+                <div class="clock" id="clock">00:00:00</div>
+            </div>
+        </header>
+
+        <!-- Dashboard View -->
+        <div id="dashboardView" class="dashboard-view">
+            <div class="main-grid">
+                <!-- Left Panel: Agent Tree -->
+                <aside class="panel agent-panel">
+                    <div class="panel-header">
+                        <h2>AGENT HIERARCHY</h2>
+                        <button class="btn-icon" onclick="openNewAgentModal()" title="Add Agent">+</button>
+                    </div>
+                    <div class="agent-tree" id="agentTree">
+                        <!-- Populated by JS -->
+                    </div>
+                </aside>
+
+                <!-- Center Panel: Activity Feed -->
+                <main class="panel activity-panel">
+                    <div class="panel-header">
+                        <h2>LIVE ACTIVITY</h2>
+                        <button class="btn-icon" onclick="refreshActivity()" title="Refresh">↻</button>
+                    </div>
+                    <div class="activity-feed" id="activityFeed">
+                        <!-- Populated by JS -->
+                    </div>
+                </main>
+
+                <!-- Right Panel: Task Board -->
+                <aside class="panel task-panel">
+                    <div class="panel-header">
+                        <h2>TASK BOARD</h2>
+                        <button class="btn-icon" onclick="openNewTaskModal()" title="Add Task">+</button>
+                    </div>
+                    <div class="task-columns" id="taskBoard">
+                        <!-- Populated by JS -->
+                    </div>
+                </aside>
+            </div>
+        </div>
+
+        <!-- Office View -->
+        <div id="officeView">
+            <canvas id="officeCanvas" tabindex="0"></canvas>
+            <div class="office-hint">
+            <span>Click</span> on an agent to interact | <span>WASD</span> to move | Agents move autonomously as they work
+            </div>
+        </div>
+
+        <!-- Bottom Bar: Quick Stats -->
+        <footer class="footer">
+            <div class="stat">
+                <span class="stat-label">TOTAL AGENTS</span>
+                <span class="stat-value" id="statAgents">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">ACTIVE TASKS</span>
+                <span class="stat-value" id="statActiveTasks">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">COMPLETED TODAY</span>
+                <span class="stat-value" id="statCompleted">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">SYSTEM STATUS</span>
+                <span class="stat-value status-ok">OPERATIONAL</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Agent Detail Modal -->
+    <div class="modal" id="agentModal">
+        <div class="modal-backdrop" onclick="closeAgentModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="agentModalTitle">AGENT DETAILS</h3>
+                <button class="btn-close" onclick="closeAgentModal()">×</button>
+            </div>
+            <div class="modal-body" id="agentModalBody">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- New Task Modal -->
+    <div class="modal" id="taskModal">
+        <div class="modal-backdrop" onclick="closeTaskModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>NEW TASK</h3>
+                <button class="btn-close" onclick="closeTaskModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="newTaskForm">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" name="title" required placeholder="Task title...">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea name="description" placeholder="Task details..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Assign To</label>
+                            <select name="assigned_to" id="taskAgentSelect">
+                                <!-- Populated by JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Priority</label>
+                            <select name="priority">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="closeTaskModal()">Cancel</button>
+                        <button type="submit" class="btn-primary">Create Task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Agent Modal -->
+    <div class="modal" id="newAgentModal">
+        <div class="modal-backdrop" onclick="closeNewAgentModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>NEW AGENT</h3>
+                <button class="btn-close" onclick="closeNewAgentModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="newAgentForm">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" name="name" required placeholder="Agent name...">
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select name="role" required>
+                            <option value="research">Research</option>
+                            <option value="coding">Coding</option>
+                            <option value="business">Business</option>
+                            <option value="operations">Operations</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Parent Agent</label>
+                        <select name="parent_id" id="parentAgentSelect">
+                            <option value="carson">Carson (Root)</option>
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Department</label>
+                        <select name="department">
+                            <option value="research">Research Lab</option>
+                            <option value="coding">Dev Hub</option>
+                            <option value="business">Business Suite</option>
+                            <option value="general">General</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>System Prompt</label>
+                        <textarea name="system_prompt" required placeholder="Instructions for this agent..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="closeNewAgentModal()">Cancel</button>
+                        <button type="submit" class="btn-primary">Create Agent</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div class="modal" id="chatModal">
+        <div class="modal-backdrop" onclick="closeChatModal()"></div>
+        <div class="modal-content chat-modal">
+            <div class="modal-header">
+                <h3 id="chatModalTitle">CHAT</h3>
+                <button class="btn-close" onclick="closeChatModal()">×</button>
+            </div>
+            <div class="modal-body chat-body">
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatKeypress(event)">
+                    <button class="btn-primary" onclick="sendChatMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js?v=2"></script>
+    <script src="/office.js?v=2"></script>
+    <script>
+        // View switching - defined globally to ensure it's available
+        let currentView = 'dashboard';
+        
+        function switchView(view) {
+            console.log('switchView called:', view);
+            currentView = view;
+            
+            // Sync with office.js's currentView if office is loaded
+            if (typeof window.officeSetView === 'function') {
+                window.officeSetView(view);
+            }
+            
+            const officeView = document.getElementById('officeView');
+            const dashboardView = document.getElementById('dashboardView');
+            const dashboardBtn = document.getElementById('dashboardBtn');
+            const officeBtn = document.getElementById('officeBtn');
+            
+            if (view === 'office') {
+                if (officeView) officeView.style.display = 'block';
+                if (dashboardView) dashboardView.style.display = 'none';
+                if (dashboardBtn) dashboardBtn.classList.remove('active');
+                if (officeBtn) officeBtn.classList.add('active');
+                // Force office render
+                if (typeof window.officeForceRender === 'function') {
+                    window.officeForceRender();
+                }
+            } else {
+                if (officeView) officeView.style.display = 'none';
+                if (dashboardView) dashboardView.style.display = 'flex';
+                if (dashboardBtn) dashboardBtn.classList.add('active');
+                if (officeBtn) officeBtn.classList.remove('active');
+            }
+        }
+        
+        window.switchView = switchView;
+        
+        // Initialize office view when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof initOffice === 'function') {
+                initOffice();
+            }
+            
+            // Set initial view to dashboard
+            switchView('dashboard');
+        });
+    </script>
+</body>
+</html>

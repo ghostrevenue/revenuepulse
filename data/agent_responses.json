@@ -1,0 +1,26 @@
+[
+  {
+    "request_id": "473afdb5-0fa5-4175-9be7-ee9f517da224",
+    "agent_id": "agent-research",
+    "response": "[Error] Agent agent-research not found",
+    "timestamp": "2026-04-05T16:40:38.269282"
+  },
+  {
+    "request_id": "8b332241-593a-4437-8f72-c0d3246a5b6a",
+    "agent_id": "agent-research",
+    "response": "[Error] Agent agent-research not found",
+    "timestamp": "2026-04-05T16:40:38.269303"
+  },
+  {
+    "request_id": "8abff78f-ec5c-4cc3-aa4a-c47c097f78e5",
+    "agent_id": "agent-research",
+    "response": "[Error] Agent agent-research not found",
+    "timestamp": "2026-04-05T16:40:38.269306"
+  },
+  {
+    "request_id": "711ce7f9-f847-459b-9e8a-a4e8fd478c3a",
+    "agent_id": "agent-c3044910",
+    "response": "[Error] No valid API key configured. Please set MINIMAX_API_KEY in ~/.hermes/.env",
+    "timestamp": "2026-04-05T16:40:40.999132"
+  }
+]
