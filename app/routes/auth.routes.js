@@ -84,12 +84,13 @@ router.get('/callback', async (req, res) => {
         if (!verified) {
           return res.status(401).json({ error: 'HMAC verification failed' });
         }
-      } catch {
+      } catch (e) {
+        console.error('HMAC verify threw:', e.message);
         return res.status(401).json({ error: 'HMAC verification error' });
       }
     }
 
-    // Verify state to prevent CSRF
+    // Verify state to prevent CSRF (skip if no session store)
     if (state && req.session?.state && state !== req.session.state) {
       return res.status(401).json({ error: 'State mismatch — possible CSRF' });
     }
