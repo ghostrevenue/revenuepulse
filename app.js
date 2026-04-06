@@ -69,20 +69,26 @@ async function loadActivity() {
 }
 
 async function loadStats() {
-    const totalAgents = agents.length;
-    const activeTasks = tasks.filter(t => t.status === 'in_progress' || t.status === 'queued').length;
-    const completedToday = tasks.filter(t => {
-        if (t.completed_at) {
-            const completed = new Date(t.completed_at);
-            const today = new Date();
-            return completed.toDateString() === today.toDateString();
-        }
-        return false;
-    }).length;
-    
-    document.getElementById('statAgents').textContent = totalAgents;
-    document.getElementById('statActiveTasks').textContent = activeTasks;
-    document.getElementById('statCompleted').textContent = completedToday;
+    try {
+        const res = await fetch(`${API_BASE}/agents`);
+        const statsAgents = await res.json();
+        const totalAgents = statsAgents.length;
+        const activeTasks = tasks.filter(t => t.status === 'in_progress' || t.status === 'queued').length;
+        const completedToday = tasks.filter(t => {
+            if (t.completed_at) {
+                const completed = new Date(t.completed_at);
+                const today = new Date();
+                return completed.toDateString() === today.toDateString();
+            }
+            return false;
+        }).length;
+
+        document.getElementById('statAgents').textContent = totalAgents;
+        document.getElementById('statActiveTasks').textContent = activeTasks;
+        document.getElementById('statCompleted').textContent = completedToday;
+    } catch (err) {
+        console.error('Failed to load stats:', err);
+    }
 }
 
 function startAutoRefresh() {

@@ -689,22 +689,29 @@ async function updateOfficeStats() {
     if (!positions || !positions.agents) return;
     
     const activeAgents = positions.agents.filter(a => a.status === 'working' || a.status === 'idle').length;
-    document.getElementById('statActiveAgents').textContent = activeAgents;
+    const el = document.getElementById('statActiveAgents');
+    if (el) el.textContent = activeAgents;
     
     try {
         const res = await fetch(`${API_BASE}/metrics`);
         const metrics = await res.json();
-        document.getElementById('statTokens').textContent = metrics.tokens_used?.toLocaleString() || '0';
-        document.getElementById('statApiCalls').textContent = metrics.api_calls?.toLocaleString() || '0';
+        const tEl = document.getElementById('statTokens');
+        if (tEl) tEl.textContent = metrics.tokens_used?.toLocaleString() || '0';
+        const aEl = document.getElementById('statApiCalls');
+        if (aEl) aEl.textContent = metrics.api_calls?.toLocaleString() || '0';
         
         const taskRes = await fetch(`${API_BASE}/tasks`);
         const tasks = await taskRes.json();
         const completed = tasks.filter(t => t.status === 'done').length;
-        document.getElementById('statTasksDone').textContent = completed;
+        const tdEl = document.getElementById('statTasksDone');
+        if (tdEl) tdEl.textContent = completed;
         
-        document.getElementById('statRevenue').textContent = '$' + (metrics.revenue || 0).toLocaleString();
-        document.getElementById('statCosts').textContent = '$' + (metrics.total_cost || 0).toFixed(2);
-        document.getElementById('statProfit').textContent = '$' + ((metrics.revenue || 0) - (metrics.total_cost || 0)).toFixed(2);
+        const rEl = document.getElementById('statRevenue');
+        if (rEl) rEl.textContent = '$' + (metrics.revenue || 0).toLocaleString();
+        const cEl = document.getElementById('statCosts');
+        if (cEl) cEl.textContent = '$' + (metrics.total_cost || 0).toFixed(2);
+        const pEl = document.getElementById('statProfit');
+        if (pEl) pEl.textContent = '$' + ((metrics.revenue || 0) - (metrics.total_cost || 0)).toFixed(2);
     } catch (err) {
         console.error('Failed to load metrics:', err);
     }
