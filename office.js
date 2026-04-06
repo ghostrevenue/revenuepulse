@@ -1122,7 +1122,7 @@ function drawRoomLighting() {
 function drawWalls() {
     if (!officeData || !officeData.rooms) return;
     
-    const wallThick = WALL_THICKNESS;
+    const wallThick = officeData.wall_thickness !== undefined ? officeData.wall_thickness : WALL_THICKNESS;
     
     for (const room of officeData.rooms) {
         const wallColor = room.wall_color || COLORS.wall;

@@ -1,137 +1,144 @@
 {
   "width": 1200,
   "height": 800,
-  "wall_thickness": 14,
-  "door_width": 50,
+  "wall_thickness": 0,
+  "door_width": 0,
   "rooms": [
     {
-      "id": "lobby",
-      "name": "The Lobby",
-      "x": 50,
-      "y": 350,
-      "width": 350,
-      "height": 250,
-      "type": "lobby",
-      "color": "#D9A066",
-      "floor_color": "#D9A066",
+      "id": "office",
+      "name": "Office",
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 800,
+      "type": "open",
+      "color": "#F5EDE0",
+      "floor_color": "#E8D4B8",
       "wall_color": "#F5EDE0",
-      "accent_color": "#8B9A7D",
-      "glow_color": "rgba(255, 244, 224, 0.3)",
-      "has_windows": true
-    },
-    {
-      "id": "research",
-      "name": "Research Lab",
-      "x": 50,
-      "y": 50,
-      "width": 350,
-      "height": 250,
-      "type": "department",
-      "color": "#8B9A7D",
-      "floor_color": "#8B9A7D",
-      "wall_color": "#E8E0F0",
-      "accent_color": "#6B8E9F",
-      "glow_color": "rgba(255, 244, 224, 0.25)",
-      "has_windows": true
-    },
-    {
-      "id": "coding",
-      "name": "Coding/Development",
-      "x": 450,
-      "y": 50,
-      "width": 350,
-      "height": 250,
-      "type": "department",
-      "color": "#C9847A",
-      "floor_color": "#C9847A",
-      "wall_color": "#E5E0D6",
-      "accent_color": "#7B9ED9",
-      "glow_color": "rgba(255, 244, 224, 0.25)",
-      "has_windows": true
-    },
-    {
-      "id": "business",
-      "name": "Business Suite",
-      "x": 450,
-      "y": 350,
-      "width": 350,
-      "height": 250,
-      "type": "department",
-      "color": "#B8A082",
-      "floor_color": "#B8A082",
-      "wall_color": "#F0EBE3",
-      "accent_color": "#D4A574",
-      "glow_color": "rgba(255, 244, 224, 0.25)",
-      "has_windows": true
-    },
-    {
-      "id": "breakroom",
-      "name": "Break Room",
-      "x": 250,
-      "y": 650,
-      "width": 500,
-      "height": 150,
-      "type": "social",
-      "color": "#CD853F",
-      "floor_color": "#CD853F",
-      "wall_color": "#E8D4B8",
-      "accent_color": "#7D9D6F",
+      "accent_color": "#D9A066",
       "glow_color": "rgba(255, 244, 224, 0.3)",
       "has_windows": true
     }
   ],
   "desks": [
-    {"id": "desk-r1", "room": "research", "x": 100, "y": 100, "department": "research"},
-    {"id": "desk-r2", "room": "research", "x": 220, "y": 100, "department": "research"},
-    {"id": "desk-r3", "room": "research", "x": 340, "y": 100, "department": "research"},
-    {"id": "desk-c1", "room": "coding", "x": 500, "y": 100, "department": "coding"},
-    {"id": "desk-c2", "room": "coding", "x": 620, "y": 100, "department": "coding"},
-    {"id": "desk-c3", "room": "coding", "x": 740, "y": 100, "department": "coding"},
-    {"id": "desk-b1", "room": "business", "x": 500, "y": 400, "department": "business"},
-    {"id": "desk-b2", "room": "business", "x": 620, "y": 400, "department": "business"},
-    {"id": "desk-b3", "room": "business", "x": 740, "y": 400, "department": "business"},
-    {"id": "desk-l1", "room": "lobby", "x": 100, "y": 400, "department": "owner"},
-    {"id": "desk-l2", "room": "lobby", "x": 220, "y": 400, "department": "owner"},
-    {"id": "couch-br1", "room": "breakroom", "x": 300, "y": 680, "type": "couch"},
-    {"id": "couch-br2", "room": "breakroom", "x": 450, "y": 680, "type": "couch"}
+    {
+      "id": "desk-nova",
+      "room": "office",
+      "x": 180,
+      "y": 180,
+      "department": "research",
+      "agent_id": "agent-research"
+    },
+    {
+      "id": "desk-byte",
+      "room": "office",
+      "x": 900,
+      "y": 180,
+      "department": "coding",
+      "agent_id": "agent-coding"
+    },
+    {
+      "id": "desk-deall",
+      "room": "office",
+      "x": 900,
+      "y": 580,
+      "department": "business",
+      "agent_id": "agent-business"
+    },
+    {
+      "id": "desk-carson",
+      "room": "office",
+      "x": 350,
+      "y": 500,
+      "department": "owner",
+      "agent_id": "carson"
+    }
   ],
-  "corridors": [
-    {"id": "corr-h1", "x": 50, "y": 300, "width": 350, "height": 50, "direction": "horizontal", "connects": ["research", "lobby"]},
-    {"id": "corr-h2", "x": 450, "y": 300, "width": 350, "height": 50, "direction": "horizontal", "connects": ["coding", "business"]},
-    {"id": "corr-h3", "x": 250, "y": 600, "width": 500, "height": 50, "direction": "horizontal", "connects": ["lobby", "breakroom", "business"]},
-    {"id": "corr-v1", "x": 400, "y": 50, "width": 50, "height": 250, "direction": "vertical", "connects": ["research", "coding"]},
-    {"id": "corr-v2", "x": 400, "y": 350, "width": 50, "height": 250, "direction": "vertical", "connects": ["lobby", "business"]}
-  ],
-  "doors": [
-    {"id": "door-1", "room1": "research", "room2": "lobby", "x": 200, "y": 300, "width": 50, "height": 14, "type": "doorway"},
-    {"id": "door-2", "room1": "coding", "room2": "business", "x": 600, "y": 300, "width": 50, "height": 14, "type": "doorway"},
-    {"id": "door-3", "room1": "lobby", "room2": "breakroom", "x": 350, "y": 600, "width": 50, "height": 14, "type": "doorway"},
-    {"id": "door-4", "room1": "business", "room2": "breakroom", "x": 600, "y": 600, "width": 50, "height": 14, "type": "doorway"},
-    {"id": "door-5", "room1": "research", "room2": "coding", "x": 400, "y": 150, "width": 14, "height": 50, "type": "doorway"},
-    {"id": "door-6", "room1": "lobby", "room2": "business", "x": 400, "y": 450, "width": 14, "height": 50, "type": "doorway"}
-  ],
+  "corridors": [],
+  "doors": [],
   "decorations": [
-    {"id": "plant-1", "type": "plant", "x": 60, "y": 60, "variant": "tall"},
-    {"id": "plant-2", "type": "plant", "x": 860, "y": 60, "variant": "tall"},
-    {"id": "plant-3", "type": "plant", "x": 60, "y": 360, "variant": "tall"},
-    {"id": "plant-4", "type": "plant", "x": 860, "y": 360, "variant": "tall"},
-    {"id": "plant-5", "type": "plant", "x": 460, "y": 660, "variant": "tall"},
-    {"id": "plant-6", "type": "plant", "x": 660, "y": 660, "variant": "tall"},
-    {"id": "lamp-1", "type": "floor_lamp", "x": 400, "y": 100},
-    {"id": "lamp-2", "type": "floor_lamp", "x": 400, "y": 400},
-    {"id": "lamp-3", "type": "floor_lamp", "x": 500, "y": 680},
-    {"id": "poster-1", "type": "poster", "x": 100, "y": 60, "text": "RESEARCH", "color": "#8B9A7D"},
-    {"id": "poster-2", "type": "poster", "x": 560, "y": 60, "text": "CODE", "color": "#C9847A"},
-    {"id": "poster-3", "type": "poster", "x": 560, "y": 360, "text": "BUSINESS", "color": "#D4A574"},
-    {"id": "poster-4", "type": "poster", "x": 350, "y": 660, "text": "RELAX", "color": "#CD853F"},
-    {"id": "whiteboard-1", "type": "whiteboard", "x": 150, "y": 52, "width": 100, "height": 50},
-    {"id": "whiteboard-2", "type": "whiteboard", "x": 600, "y": 52, "width": 100, "height": 50},
-    {"id": "whiteboard-3", "type": "whiteboard", "x": 600, "y": 352, "width": 100, "height": 50},
-    {"id": "bookshelf-1", "type": "bookshelf", "x": 60, "y": 150, "width": 50, "height": 70},
-    {"id": "bookshelf-2", "type": "bookshelf", "x": 460, "y": 150, "width": 50, "height": 70},
-    {"id": "coffee-1", "type": "coffee_station", "x": 460, "y": 660},
-    {"id": "window-1", "type": "window", "x": 100, "y": 52, "width": 80, "height": 50},
-    {"id": "window-2", "type": "window", "x": 560, "y": 52, "width": 80, "height": 50},
-    {"id": "window-3", "type": "window", "x": 560, "y": 352, "width": 80, "height": 50}
+    {
+      "id": "plant-1",
+      "type": "plant",
+      "x": 60,
+      "y": 60,
+      "variant": "tall"
+    },
+    {
+      "id": "plant-2",
+      "type": "plant",
+      "x": 1060,
+      "y": 60,
+      "variant": "tall"
+    },
+    {
+      "id": "plant-3",
+      "type": "plant",
+      "x": 60,
+      "y": 700,
+      "variant": "tall"
+    },
+    {
+      "id": "plant-4",
+      "type": "plant",
+      "x": 1060,
+      "y": 700,
+      "variant": "tall"
+    },
+    {
+      "id": "plant-5",
+      "type": "plant",
+      "x": 600,
+      "y": 380,
+      "variant": "tall"
+    },
+    {
+      "id": "lamp-1",
+      "type": "floor_lamp",
+      "x": 550,
+      "y": 100
+    },
+    {
+      "id": "lamp-2",
+      "type": "floor_lamp",
+      "x": 550,
+      "y": 650
+    },
+    {
+      "id": "coffee-1",
+      "type": "coffee_station",
+      "x": 1050,
+      "y": 400
+    },
+    {
+      "id": "couch-1",
+      "type": "couch",
+      "x": 500,
+      "y": 350
+    },
+    {
+      "id": "whiteboard-1",
+      "type": "whiteboard",
+      "x": 400,
+      "y": 52,
+      "width": 100,
+      "height": 50
+    },
+    {
+      "id": "bookshelf-1",
+      "type": "bookshelf",
+      "x": 60,
+      "y": 300,
+      "width": 50,
+      "height": 70
+    },
+    {
+      "id": "rug-1",
+      "type": "rug",
+      "x": 500,
+      "y": 350,
+      "width": 200,
+      "height": 150
+    }
   ]
 }

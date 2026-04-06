@@ -16,8 +16,8 @@
       "agent-business"
     ],
     "department": "owner",
-    "created_at": "2026-04-06T00:47:04.939251",
-    "updated_at": "2026-04-06T00:47:04.939267",
+    "created_at": "2026-04-06T02:35:12.587019",
+    "updated_at": "2026-04-06T02:35:12.587035",
     "position": {
       "x": 1050,
       "y": 650
@@ -42,8 +42,8 @@
     "current_task": null,
     "children": [],
     "department": "research",
-    "created_at": "2026-04-06T00:47:04.939270",
-    "updated_at": "2026-04-06T00:47:04.939271",
+    "created_at": "2026-04-06T02:35:12.587039",
+    "updated_at": "2026-04-06T02:35:12.587040",
     "position": {
       "x": 80,
       "y": 80
@@ -68,8 +68,8 @@
     "current_task": null,
     "children": [],
     "department": "coding",
-    "created_at": "2026-04-06T00:47:04.939273",
-    "updated_at": "2026-04-06T00:47:04.939274",
+    "created_at": "2026-04-06T02:35:12.587042",
+    "updated_at": "2026-04-06T02:35:12.587043",
     "position": {
       "x": 480,
       "y": 80
@@ -94,8 +94,8 @@
     "current_task": null,
     "children": [],
     "department": "business",
-    "created_at": "2026-04-06T00:47:04.939276",
-    "updated_at": "2026-04-06T00:47:04.939278",
+    "created_at": "2026-04-06T02:35:12.587044",
+    "updated_at": "2026-04-06T02:35:12.587046",
     "position": {
       "x": 880,
       "y": 80
