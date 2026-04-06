@@ -6,10 +6,10 @@ handle = "revenuepulse"
 url = "https://revenuepulse-production.up.railway.app"
 
 [auth]
-redirect_urls = [
-  "https://revenuepulse-production.up.railway.app/auth/callback",
-  "https://revenuepulse-production.up.railway.app/auth/shopify/callback",
-]
+  redirect_urls = [
+    "https://revenuepulse-production.up.railway.app/api/auth/callback",
+    "https://revenuepulse-production.up.railway.app/api/auth/shopify/callback",
+  ]
 
 [webhooks]
 api_version = "2024-01"
