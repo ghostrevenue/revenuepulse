@@ -80,7 +80,7 @@ router.post('/plan', verifySession, async (req, res) => {
     plan,
     message: `Subscribed to ${plan.name} plan ($${plan.price}/mo)`,
     // In production: include confirmation_url from Shopify
-    confirmation_url: `${process.env.APP_URL}/billing/confirmed?plan=${planKey}`
+    confirmation_url: `${getAppUrl()}/billing/confirmed?plan=${planKey}`
   });
 });
 
@@ -88,6 +88,12 @@ router.post('/plan', verifySession, async (req, res) => {
 router.get('/plans', (req, res) => {
   res.json({ plans: PLANS });
 });
+
+function getAppUrl() {
+  let url = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+  return url;
+}
 
 // Shopify Billing API: Create recurring charge
 // In production, this would call Shopify's Billing API:
@@ -97,13 +103,14 @@ router.post('/charges', verifySession, async (req, res) => {
   if (!PLANS[planKey]) return res.status(400).json({ error: 'Invalid plan' });
 
   const plan = PLANS[planKey];
+  const appUrl = getAppUrl();
 
   // Shopify recurring charge structure
   const charge = {
     name: `RevenuePulse ${plan.name}`,
     price: plan.price,
     interval: 'every_30_days',
-    return_url: `${process.env.APP_URL}/billing/callback`,
+    return_url: `${appUrl}/billing/callback`,
     terms: `Revenue analytics dashboard - ${plan.features.join(', ')}`
   };
 
@@ -111,7 +118,7 @@ router.post('/charges', verifySession, async (req, res) => {
   // For now: return mock charge URL
   res.json({
     charge,
-    confirmation_url: `${process.env.APP_URL}/billing/confirmed?plan=${planKey}&store=${req.store.shop}`,
+    confirmation_url: `${appUrl}/billing/confirmed?plan=${planKey}&store=${req.store.shop}`,
     note: 'Production: would create Shopify recurring_application_charge'
   });
 });

@@ -55,7 +55,11 @@ app.get('/admin/oauth/authorize', (req, res) => {
 app.get('/api/app-bridge-config', (req, res) => {
   const apiKey = process.env.SHOPIFY_API_KEY;
   const shop = req.query.shop;
-  const appUrl = process.env.APP_URL || `https://revenuepulse.up.railway.app`;
+  const appUrl = (() => {
+    let url = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+    return url;
+  })();
 
   if (!apiKey) {
     return res.status(500).json({ error: 'SHOPIFY_API_KEY not configured' });

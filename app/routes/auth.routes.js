@@ -107,8 +107,12 @@ router.get('/callback', async (req, res) => {
 
     // Redirect to app root with store info
     // For embedded apps: redirect to React app with query params
-    const appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
-    res.redirect(`${appUrl}?store_id=${store.id}&shop=${shop}`);
+    let appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+    // Ensure absolute URL with protocol
+    if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
+      appUrl = 'https://' + appUrl;
+    }
+    res.redirect(`${appUrl}/?store_id=${store.id}&shop=${shop}`);
   } catch (err) {
     console.error('OAuth callback error:', err);
     res.status(500).json({ error: 'OAuth callback failed: ' + err.message });
