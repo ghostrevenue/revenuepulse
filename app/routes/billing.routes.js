@@ -1,6 +1,7 @@
 import express from 'express';
 import { BillingModel } from '../models/billing.js';
 import { StoreModel } from '../models/store.js';
+import db from '../models/db.js';
 
 const router = express.Router();
 
@@ -26,17 +27,19 @@ export const PLANS = {
   }
 };
 
-// Middleware: verify session token and extract store
+// Middleware: verify session token and extract store (async)
 async function verifySession(req, res, next) {
   const shopDomain = req.headers['x-shopify-shop-domain'];
   const storeId = req.headers['x-store-id'];
 
+  await db.ensureReady();
+
   if (shopDomain) {
-    const store = StoreModel.findByShop(shopDomain);
+    const store = await StoreModel.findByShop(shopDomain);
     if (!store) return res.status(401).json({ error: 'Store not found' });
     req.store = store;
   } else if (storeId) {
-    const store = StoreModel.findById(storeId);
+    const store = await StoreModel.findById(storeId);
     if (!store) return res.status(401).json({ error: 'Store not found' });
     req.store = store;
   } else {
@@ -46,8 +49,8 @@ async function verifySession(req, res, next) {
 }
 
 // Get current plan
-router.get('/plan', verifySession, (req, res) => {
-  const billing = BillingModel.findByStore(req.store.id);
+router.get('/plan', verifySession, async (req, res) => {
+  const billing = await BillingModel.findByStore(req.store.id);
   const plan = billing ? PLANS[billing.plan] : PLANS.starter;
 
   res.json({
@@ -70,7 +73,7 @@ router.post('/plan', verifySession, async (req, res) => {
 
   // In production: create Shopify billing charge via Billing API
   // For now: update local billing record
-  BillingModel.upsert(req.store.id, planKey, 'active');
+  await BillingModel.upsert(req.store.id, planKey, 'active');
 
   res.json({
     success: true,

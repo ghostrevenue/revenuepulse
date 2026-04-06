@@ -1,23 +1,24 @@
 import db from './db.js';
 
 export const BillingModel = {
-  findByStore(storeId) {
+  async findByStore(storeId) {
     if (db.usePostgres) {
-      return db.prepare('SELECT * FROM billing WHERE store_id = $1').get(storeId);
+      const result = await db.query('SELECT * FROM billing WHERE store_id = $1', [storeId]);
+      return result.rows[0] || null;
     }
     return db.prepare('SELECT * FROM billing WHERE store_id = ?').get(storeId);
   },
 
-  upsert(storeId, plan, status = 'active') {
+  async upsert(storeId, plan, status = 'active') {
     if (db.usePostgres) {
-      return db.prepare(`
+      return db.query(`
         INSERT INTO billing (store_id, plan, status)
         VALUES ($1, $2, $3)
         ON CONFLICT (store_id) DO UPDATE SET
           plan = EXCLUDED.plan,
           status = EXCLUDED.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(storeId, plan, status);
+      `, [storeId, plan, status]);
     }
     return db.prepare(`
       INSERT INTO billing (store_id, plan, status)

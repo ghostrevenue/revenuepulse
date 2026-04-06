@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { StoreModel } from '../models/store.js';
+import db from '../models/db.js';
 
 const router = express.Router();
 
@@ -21,7 +22,8 @@ router.post('/session/verify', async (req, res) => {
 
   // If we have a shop domain and API key, verify against our store
   if (shopDomain) {
-    const store = StoreModel.findByShop(shopDomain);
+    await db.ensureReady();
+    const store = await StoreModel.findByShop(shopDomain);
     if (!store) {
       return res.status(401).json({ error: 'Store not found' });
     }
@@ -36,7 +38,8 @@ router.post('/session/verify', async (req, res) => {
       const parts = sessionToken.split('.');
       if (parts.length !== 3) {
         // May be a simple opaque token — look up store
-        const store = StoreModel.findById(sessionToken);
+        await db.ensureReady();
+        const store = await StoreModel.findById(sessionToken);
         if (!store) return res.status(401).json({ error: 'Invalid token' });
         return res.json({ store: { id: store.id, shop: store.shop } });
       }
@@ -48,11 +51,12 @@ router.post('/session/verify', async (req, res) => {
         return res.status(401).json({ error: 'Invalid token payload' });
       }
 
-      const store = StoreModel.findByShop(shop);
+      await db.ensureReady();
+      let store = await StoreModel.findByShop(shop);
       if (!store) {
         // Auto-register store on first access
         const id = uuidv4();
-        StoreModel.create({ id, shop, accessToken: sessionToken, scope: 'read_orders,read_products' });
+        await StoreModel.create({ id, shop, accessToken: sessionToken, scope: 'read_orders,read_products' });
         return res.json({ store: { id, shop } });
       }
 
@@ -66,22 +70,29 @@ router.post('/session/verify', async (req, res) => {
 });
 
 // OAuth callback — standard Shopify OAuth flow
-router.get('/callback', (req, res) => {
-  const { shop, code } = req.query;
-  if (!shop) return res.status(400).json({ error: 'Shop required' });
+router.get('/callback', async (req, res) => {
+  try {
+    const { shop, code } = req.query;
+    if (!shop) return res.status(400).json({ error: 'Shop required' });
 
-  // In production: exchange code for access token via Shopify OAuth
-  // For now: auto-create or update store
-  let store = StoreModel.findByShop(shop);
-  if (!store) {
-    const id = uuidv4();
-    StoreModel.create({ id, shop, accessToken: 'token_' + (code || id), scope: 'read_orders,read_products' });
-    store = StoreModel.findByShop(shop);
+    await db.ensureReady();
+
+    // Exchange code for access token (real Shopify OAuth)
+    // For now: auto-create or update store
+    let store = await StoreModel.findByShop(shop);
+    if (!store) {
+      const id = uuidv4();
+      await StoreModel.create({ id, shop, accessToken: 'token_' + (code || id), scope: 'read_orders,read_products' });
+      store = await StoreModel.findByShop(shop);
+    }
+
+    // Redirect to app with store ID for embedded app
+    const appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+    res.redirect(`${appUrl}?store_id=${store.id}&shop=${shop}`);
+  } catch (err) {
+    console.error('OAuth callback error:', err);
+    res.status(500).json({ error: 'OAuth callback failed: ' + err.message });
   }
-
-  // Redirect to app with store ID for embedded app
-  const appUrl = process.env.APP_URL || 'https://revenuepulse.up.railway.app';
-  res.redirect(`${appUrl}?store_id=${store.id}&shop=${shop}`);
 });
 
 // Health check for auth
