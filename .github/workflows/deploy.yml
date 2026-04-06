@@ -1,0 +1,31 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SHOPIFY_API_KEY: ${{ secrets.SHOPIFY_API_KEY }}
+          SHOPIFY_API_SECRET: ${{ secrets.SHOPIFY_API_SECRET }}
+        run: railway up
