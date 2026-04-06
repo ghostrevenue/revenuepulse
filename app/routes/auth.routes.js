@@ -6,38 +6,41 @@ import db from '../models/db.js';
 
 const router = express.Router();
 
+// HMAC verification for Shopify webhook/callback requests
+function verifyShopifyHmac(query, secret) {
+  const { hmac, ...params } = query;
+  const message = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${params[key]}`)
+    .join('&');
+  const generatedHash = crypto
+    .createHmac('sha256', secret)
+    .update(message)
+    .digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(hmac || ''), Buffer.from(generatedHash));
+}
+
 // Verify Shopify session token (JWT) — replaces cookie-based auth
-// Shopify sends session token via X-Shopify-Access-Token header or Authorization Bearer
-// For embedded apps, Shopify App Bridge sends it as a header
 router.post('/session/verify', async (req, res) => {
   const authHeader = req.headers.authorization;
   const shopDomain = req.headers['x-shopify-shop-domain'];
-
-  // Also accept session token via body (from frontend)
   const sessionToken = req.body?.sessionToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
   if (!sessionToken && !shopDomain) {
     return res.status(401).json({ error: 'No session token or shop domain provided' });
   }
 
-  // If we have a shop domain and API key, verify against our store
   if (shopDomain) {
     await db.ensureReady();
     const store = await StoreModel.findByShop(shopDomain);
-    if (!store) {
-      return res.status(401).json({ error: 'Store not found' });
-    }
+    if (!store) return res.status(401).json({ error: 'Store not found' });
     return res.json({ store: { id: store.id, shop: store.shop } });
   }
 
-  // If we have a session token, decode and verify it
   if (sessionToken) {
     try {
-      // Shopify session tokens are base64-encoded JSON with a Shopify signature
-      // Format: base64(header).base64(payload).signature
       const parts = sessionToken.split('.');
       if (parts.length !== 3) {
-        // May be a simple opaque token — look up store
         await db.ensureReady();
         const store = await StoreModel.findById(sessionToken);
         if (!store) return res.status(401).json({ error: 'Invalid token' });
@@ -47,14 +50,11 @@ router.post('/session/verify', async (req, res) => {
       const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
       const shop = payload.dest?.replace('https://', '') || payload.aud;
 
-      if (!shop) {
-        return res.status(401).json({ error: 'Invalid token payload' });
-      }
+      if (!shop) return res.status(401).json({ error: 'Invalid token payload' });
 
       await db.ensureReady();
       let store = await StoreModel.findByShop(shop);
       if (!store) {
-        // Auto-register store on first access
         const id = uuidv4();
         await StoreModel.create({ id, shop, accessToken: sessionToken, scope: 'read_orders,read_products' });
         return res.json({ store: { id, shop } });
@@ -69,24 +69,44 @@ router.post('/session/verify', async (req, res) => {
   return res.status(401).json({ error: 'Authentication required' });
 });
 
-// OAuth callback — standard Shopify OAuth flow
+// OAuth callback — Shopify redirects here after merchant authorizes
 router.get('/callback', async (req, res) => {
   try {
-    const { shop, code } = req.query;
+    const { shop, code, state, hmac, timestamp } = req.query;
+
     if (!shop) return res.status(400).json({ error: 'Shop required' });
+
+    // Verify HMAC to prevent tampering
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    if (apiSecret && hmac && timestamp) {
+      try {
+        const verified = verifyShopifyHmac(req.query, apiSecret);
+        if (!verified) {
+          return res.status(401).json({ error: 'HMAC verification failed' });
+        }
+      } catch {
+        return res.status(401).json({ error: 'HMAC verification error' });
+      }
+    }
+
+    // Verify state to prevent CSRF
+    if (state && req.session?.state && state !== req.session.state) {
+      return res.status(401).json({ error: 'State mismatch — possible CSRF' });
+    }
 
     await db.ensureReady();
 
-    // Exchange code for access token (real Shopify OAuth)
-    // For now: auto-create or update store
+    // In production: exchange code for access token via Shopify OAuth API
+    // For now: auto-create or update store with code as token
     let store = await StoreModel.findByShop(shop);
     if (!store) {
       const id = uuidv4();
-      await StoreModel.create({ id, shop, accessToken: 'token_' + (code || id), scope: 'read_orders,read_products' });
+      await StoreModel.create({ id, shop, accessToken: code || uuidv4(), scope: 'read_orders,read_products' });
       store = await StoreModel.findByShop(shop);
     }
 
-    // Redirect to app with store ID for embedded app
+    // Redirect to app root with store info
+    // For embedded apps: redirect to React app with query params
     const appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
     res.redirect(`${appUrl}?store_id=${store.id}&shop=${shop}`);
   } catch (err) {

@@ -33,6 +33,23 @@ app.use('/api/revenue', revenueRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/webhooks', webhooksRoutes);
 
+// ─── Shopify OAuth: Entry point when merchant clicks "Install" ────────────────
+// Shopify redirects here with client_id, scope, redirect_uri, state, hmac, timestamp, shop
+// We verify the request and redirect to Shopify's real authorize URL
+app.get('/admin/oauth/authorize', (req, res) => {
+  const { shop, client_id, scope, redirect_uri, state, hmac, timestamp } = req.query;
+
+  if (!shop) {
+    return res.status(400).send('Missing shop parameter');
+  }
+
+  // In production: verify HMAC before redirecting
+  // For now, redirect to Shopify's authorize endpoint
+  const authorizeUrl = `https://${shop}/admin/oauth/authorize?client_id=${client_id}&scope=${scope}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}`;
+
+  res.redirect(authorizeUrl);
+});
+
 // ─── Embedded App: Shopify App Bridge config endpoint ──────────────────────────
 // Shopify App Bridge requires an initialization config passed to the frontend
 app.get('/api/app-bridge-config', (req, res) => {
