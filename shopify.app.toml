@@ -1,0 +1,30 @@
+name = "RevenuePulse"
+client_id = "241e0c22c806c22aea6a9f3957f29484"
+handle = "revenuepulse"
+
+[app_proxy]
+url = "https://revenuepulse-production.up.railway.app"
+
+[auth]
+redirect_urls = [
+  "https://revenuepulse-production.up.railway.app/auth/callback",
+  "https://revenuepulse-production.up.railway.app/auth/shopify/callback",
+]
+
+[webhooks]
+api_version = "2024-01"
+
+[[webhooks.subscriptions]]
+topics = ["customers/data_request"]
+uri = "/webhooks/customers/data_request"
+
+[[webhooks.subscriptions]]
+topics = ["customers/redact"]
+uri = "/webhooks/customers/redact"
+
+[[webhooks.subscriptions]]
+topics = ["shop/redact"]
+uri = "/webhooks/shop/redact"
+
+[pos]
+enabled = false
