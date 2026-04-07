@@ -87,6 +87,11 @@ async function initSqlite() {
       headline TEXT,
       message TEXT,
       active INTEGER DEFAULT 1,
+      -- A/B testing fields
+      ab_variant_group_id TEXT,
+      traffic_split INTEGER DEFAULT 100,
+      -- Fallback sequence
+      fallback_for_offer_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (store_id) REFERENCES stores(id)
@@ -102,6 +107,20 @@ async function initSqlite() {
       offer_id INTEGER,
       response TEXT NOT NULL,
       offer_type TEXT,
+      added_revenue REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (store_id) REFERENCES stores(id)
+    )
+  `);
+
+  // A/B test groups table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS upsell_ab_groups (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL,
+      offer_ids TEXT NOT NULL,
+      winner_id TEXT,
+      status TEXT DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (store_id) REFERENCES stores(id)
     )
@@ -174,6 +193,9 @@ async function initPostgres() {
       headline TEXT,
       message TEXT,
       active INTEGER DEFAULT 1,
+      ab_variant_group_id UUID,
+      traffic_split INTEGER DEFAULT 100,
+      fallback_for_offer_id UUID,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -185,11 +207,52 @@ async function initPostgres() {
       id SERIAL PRIMARY KEY,
       store_id TEXT NOT NULL,
       order_id TEXT NOT NULL,
-      offer_id INTEGER,
+      offer_id UUID,
       response TEXT NOT NULL,
       offer_type TEXT,
+      added_revenue DECIMAL(10,2) DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  // A/B test groups table
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS upsell_ab_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      store_id TEXT NOT NULL,
+      offer_ids UUID[] NOT NULL,
+      winner_id UUID,
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migration: add new columns to existing upsell_offers table
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN ab_variant_group_id UUID;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN traffic_split INTEGER DEFAULT 100;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN fallback_for_offer_id UUID;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Migration: add new columns to existing upsell_responses table
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_responses ADD COLUMN added_revenue DECIMAL(10,2) DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
   `);
 
   // Add upsell_config column to stores if it doesn't exist

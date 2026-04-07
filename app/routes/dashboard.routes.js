@@ -21,9 +21,11 @@ async function verifyShop(req, res, next) {
 }
 
 // GET /api/dashboard/stats
-// Returns total accepts, declines, revenue lifted, acceptance rate
+// Returns total accepts, declines, revenue lifted, acceptance rate, and time-bounded metrics
 router.get('/stats', verifyShop, async (req, res) => {
   try {
+    const storeId = req.store.id;
+
     // Get totals per response type
     const totals = db.usePostgres
       ? await db.prepare(`
@@ -31,13 +33,13 @@ router.get('/stats', verifyShop, async (req, res) => {
           FROM upsell_responses
           WHERE store_id = $1 AND response IN ('accepted', 'declined')
           GROUP BY response
-        `).all(req.store.id)
+        `).all(storeId)
       : db.prepare(`
           SELECT response, COUNT(*) as count
           FROM upsell_responses
           WHERE store_id = ? AND response IN ('accepted', 'declined')
           GROUP BY response
-        `).all(req.store.id);
+        `).all(storeId);
 
     const totalMap = {};
     for (const t of (totals || [])) {
@@ -49,23 +51,99 @@ router.get('/stats', verifyShop, async (req, res) => {
     const total = accepts + declines;
     const acceptanceRate = total > 0 ? Math.round((accepts / total) * 10000) / 100 : 0;
 
-    // Estimate revenue lifted — sum of responses where response = 'accepted'
-    // We approximate using accepted count (actual revenue tracking requires Shopify order edits API)
-    let revenueLifted = 0;
+    // Total revenue lifted (sum of added_revenue from all accepted offers)
+    let totalRevenueLifted = 0;
     if (db.usePostgres) {
       const rows = await db.prepare(`
-        SELECT COUNT(*) as accepted_count
+        SELECT COALESCE(SUM(added_revenue), 0) as total
         FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted'
-      `).all(req.store.id);
-      revenueLifted = (rows[0]?.accepted_count || 0) * 0; // placeholder — real impl would fetch order $ from Shopify
+      `).all(storeId);
+      totalRevenueLifted = parseFloat(rows[0]?.total || 0);
     } else {
       const row = db.prepare(`
-        SELECT COUNT(*) as accepted_count
+        SELECT COALESCE(SUM(added_revenue), 0) as total
         FROM upsell_responses
         WHERE store_id = ? AND response = 'accepted'
-      `).get(req.store.id);
-      revenueLifted = (row?.accepted_count || 0) * 0;
+      `).get(storeId);
+      totalRevenueLifted = parseFloat(row?.total || 0);
+    }
+
+    // Revenue per accept (average added_revenue per accepted offer)
+    const revenuePerAccept = accepts > 0 ? Math.round((totalRevenueLifted / accepts) * 100) / 100 : 0;
+
+    // ROI estimate: revenue lifted vs plan cost (placeholder: assume $29/mo plan cost)
+    const planCost = 29;
+    const roiEstimate = planCost > 0 ? Math.round((totalRevenueLifted / planCost) * 100) / 100 : 0;
+
+    // Time-bounded accepts
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()).toISOString();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    // Accepts today
+    let acceptsToday = 0;
+    if (db.usePostgres) {
+      const r = await db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
+      `).all(storeId, todayStart);
+      acceptsToday = parseInt(r[0]?.cnt || 0);
+    } else {
+      const r = db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = ? AND response = 'accepted' AND created_at >= ?
+      `).get(storeId, todayStart);
+      acceptsToday = parseInt(r?.cnt || 0);
+    }
+
+    // Accepts this week
+    let acceptsThisWeek = 0;
+    if (db.usePostgres) {
+      const r = await db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
+      `).all(storeId, weekStart);
+      acceptsThisWeek = parseInt(r[0]?.cnt || 0);
+    } else {
+      const r = db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = ? AND response = 'accepted' AND created_at >= ?
+      `).get(storeId, weekStart);
+      acceptsThisWeek = parseInt(r?.cnt || 0);
+    }
+
+    // Accepts this month
+    let acceptsThisMonth = 0;
+    if (db.usePostgres) {
+      const r = await db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
+      `).all(storeId, monthStart);
+      acceptsThisMonth = parseInt(r[0]?.cnt || 0);
+    } else {
+      const r = db.prepare(`
+        SELECT COUNT(*) as cnt FROM upsell_responses
+        WHERE store_id = ? AND response = 'accepted' AND created_at >= ?
+      `).get(storeId, monthStart);
+      acceptsThisMonth = parseInt(r?.cnt || 0);
+    }
+
+    // Revenue today
+    let revenueToday = 0;
+    if (db.usePostgres) {
+      const r = await db.prepare(`
+        SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses
+        WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
+      `).all(storeId, todayStart);
+      revenueToday = parseFloat(r[0]?.total || 0);
+    } else {
+      const r = db.prepare(`
+        SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses
+        WHERE store_id = ? AND response = 'accepted' AND created_at >= ?
+      `).get(storeId, todayStart);
+      revenueToday = parseFloat(r?.total || 0);
     }
 
     res.json({
@@ -73,8 +151,14 @@ router.get('/stats', verifyShop, async (req, res) => {
       declines,
       total_responses: total,
       acceptance_rate: acceptanceRate,
-      revenue_lifted: revenueLifted,
-      store_id: req.store.id
+      total_revenue_lifted: Math.round(totalRevenueLifted * 100) / 100,
+      revenue_per_accept: revenuePerAccept,
+      roi_estimate: roiEstimate,
+      accepts_today: acceptsToday,
+      accepts_this_week: acceptsThisWeek,
+      accepts_this_month: acceptsThisMonth,
+      revenue_today: Math.round(revenueToday * 100) / 100,
+      store_id: storeId
     });
   } catch (e) {
     console.error('[/dashboard/stats]', e.message);
@@ -89,7 +173,7 @@ router.get('/recent', verifyShop, async (req, res) => {
   try {
     const responses = db.usePostgres
       ? await db.prepare(`
-          SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at,
+          SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at, r.added_revenue,
                  o.offer_type, o.headline, o.message
           FROM upsell_responses r
           LEFT JOIN upsell_offers o ON r.offer_id = o.id
@@ -98,7 +182,7 @@ router.get('/recent', verifyShop, async (req, res) => {
           LIMIT $2
         `).all(req.store.id, limit)
       : db.prepare(`
-          SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at,
+          SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at, r.added_revenue,
                  o.offer_type, o.headline, o.message
           FROM upsell_responses r
           LEFT JOIN upsell_offers o ON r.offer_id = o.id
@@ -110,6 +194,79 @@ router.get('/recent', verifyShop, async (req, res) => {
     res.json({ responses: responses || [] });
   } catch (e) {
     console.error('[/dashboard/recent]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/dashboard/ab-groups
+// Returns A/B test groups with variant stats
+router.get('/ab-groups', verifyShop, async (req, res) => {
+  try {
+    const groups = db.usePostgres
+      ? await db.prepare(`
+          SELECT g.*,
+            (SELECT COUNT(*) FROM upsell_responses r WHERE r.offer_id = ANY(g.offer_ids) AND r.response = 'accepted') as total_accepts,
+            (SELECT COUNT(*) FROM upsell_responses r WHERE r.offer_id = ANY(g.offer_ids) AND r.response = 'declined') as total_declines
+          FROM upsell_ab_groups g
+          WHERE g.store_id = $1
+          ORDER BY g.created_at DESC
+        `).all(req.store.id)
+      : db.prepare(`
+          SELECT g.* FROM upsell_ab_groups g
+          WHERE g.store_id = ?
+          ORDER BY g.created_at DESC
+        `).all(req.store.id);
+
+    // For each group, fetch variant details
+    const enrichedGroups = await Promise.all((groups || []).map(async (group) => {
+      let offerIds;
+      try {
+        offerIds = db.usePostgres ? group.offer_ids : JSON.parse(group.offer_ids);
+      } catch {
+        offerIds = [];
+      }
+
+      const variants = [];
+      for (const id of offerIds) {
+        let offer;
+        if (db.usePostgres) {
+          offer = await db.prepare('SELECT * FROM upsell_offers WHERE id = $1').get(id);
+        } else {
+          offer = db.prepare('SELECT * FROM upsell_offers WHERE id = ?').get(id);
+        }
+        if (offer) {
+          // Get per-variant stats
+          let accepts = 0;
+          let declines = 0;
+          if (db.usePostgres) {
+            const a = await db.prepare(`
+              SELECT response, COUNT(*) as cnt FROM upsell_responses
+              WHERE offer_id = $1 GROUP BY response
+            `).all(id);
+            for (const r of a) {
+              if (r.response === 'accepted') accepts = parseInt(r.cnt);
+              if (r.response === 'declined') declines = parseInt(r.cnt);
+            }
+          } else {
+            const rows = db.prepare(`
+              SELECT response, COUNT(*) as cnt FROM upsell_responses
+              WHERE offer_id = ? GROUP BY response
+            `).all(id);
+            for (const r of rows) {
+              if (r.response === 'accepted') accepts = parseInt(r.cnt);
+              if (r.response === 'declined') declines = parseInt(r.cnt);
+            }
+          }
+          variants.push({ ...offer, accepts, declines });
+        }
+      }
+
+      return { ...group, variants };
+    }));
+
+    res.json({ groups: enrichedGroups });
+  } catch (e) {
+    console.error('[/dashboard/ab-groups]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
