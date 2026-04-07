@@ -67,23 +67,32 @@ export default function App() {
         const timestampFromUrl = params.get('timestamp');
 
         // Partners Dashboard OAuth install flow — redirect to backend OAuth handler
-        // which will verify HMAC and redirect to Shopify's authorize URL
-        if (hmacFromUrl && shopFromUrl && hostFromUrl) {
+        // which will verify HMAC and redirect to Shopify's authorize URL.
+        // Only do this if this is NOT a post-callback redirect (store_id means OAuth
+        // already completed — use those params instead so verifySession finds the store).
+        if (hmacFromUrl && shopFromUrl && hostFromUrl && !storeIdFromUrl) {
           window.location.href = `/api/auth/partners-start?hmac=${encodeURIComponent(hmacFromUrl)}&shop=${encodeURIComponent(shopFromUrl)}&host=${encodeURIComponent(hostFromUrl)}&timestamp=${encodeURIComponent(timestampFromUrl || '')}`;
           return;
         }
 
-        if (shopFromUrl || storeIdFromUrl) {
-          // Verify the session
+        if (storeIdFromUrl) {
+          // Post-OAuth callback: use store_id to look up the installed store
+          try {
+            const result = await api.verifySession(storeIdFromUrl);
+            setStore(result.store);
+          } catch (e) {
+            console.log('Session verification:', e.message);
+          }
+        } else if (shopFromUrl) {
+          // Direct shop URL (non-Partners Dashboard install)
           try {
             const result = await api.verifySession(null);
             setStore(result.store);
           } catch (e) {
-            // May not be authenticated yet
             console.log('Session verification:', e.message);
           }
         } else {
-          // Try anonymous verify
+          // Anonymous — show connect page
           try {
             const result = await api.verifySession(null);
             setStore(result.store);
