@@ -242,9 +242,9 @@ router.get('/callback', async (req, res) => {
     } else {
       // Update existing store's token using UPDATE query — store is a plain object with no .save()
       if (db.usePostgres) {
-        await db.query('UPDATE stores SET accessToken = $1, scope = $2 WHERE shop = $3', [accessToken, 'read_orders,read_products,read_analytics', shop]);
+        await db.query('UPDATE stores SET access_token = $1, scope = $2 WHERE shop = $3', [accessToken, 'read_orders,read_products,read_analytics', shop]);
       } else {
-        db.prepare('UPDATE stores SET accessToken = ?, scope = ? WHERE shop = ?').run(accessToken, 'read_orders,read_products,read_analytics', shop);
+        db.prepare('UPDATE stores SET access_token = ?, scope = ? WHERE shop = ?').run(accessToken, 'read_orders,read_products,read_analytics', shop);
       }
       console.log('[/api/auth/callback] store updated for', shop, 'with new token prefix:', accessToken?.slice(0, 10));
     }
