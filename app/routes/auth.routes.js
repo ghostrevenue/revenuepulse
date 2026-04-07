@@ -237,13 +237,15 @@ router.get('/callback', async (req, res) => {
     let store = await StoreModel.findByShop(shop);
     if (!store) {
       const id = uuidv4();
-      await StoreModel.create({ id, shop, accessToken, scope: 'read_orders,read_products' });
-      store = await StoreModel.findByShop(shop);
+      await StoreModel.create({ id, shop, accessToken, scope: 'read_orders,read_products,read_analytics' });
       console.log('[/api/auth/callback] store created for', shop, 'with token prefix:', accessToken?.slice(0, 10));
     } else {
-      // Update existing store's token
-      store.accessToken = accessToken;
-      await store.save();
+      // Update existing store's token using UPDATE query — store is a plain object with no .save()
+      if (db.usePostgres) {
+        await db.query('UPDATE stores SET accessToken = $1, scope = $2 WHERE shop = $3', [accessToken, 'read_orders,read_products,read_analytics', shop]);
+      } else {
+        db.prepare('UPDATE stores SET accessToken = ?, scope = ? WHERE shop = ?').run(accessToken, 'read_orders,read_products,read_analytics', shop);
+      }
       console.log('[/api/auth/callback] store updated for', shop, 'with new token prefix:', accessToken?.slice(0, 10));
     }
 
