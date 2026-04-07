@@ -22,6 +22,13 @@ function verifyShopifyHmac(query, secret) {
 
 // Verify Shopify session token (JWT) — replaces cookie-based auth
 router.post('/session/verify', async (req, res) => {
+  console.log('[DEBUG verifySession] body:', JSON.stringify(req.body));
+  console.log('[DEBUG verifySession] query:', JSON.stringify(req.query));
+  console.log('[DEBUG verifySession] headers:', JSON.stringify({
+    authorization: req.headers.authorization ? '[present]' : '[missing]',
+    'x-shopify-shop-domain': req.headers['x-shopify-shop-domain'],
+    'content-type': req.headers['content-type']
+  }));
   const authHeader = req.headers.authorization;
   const shopDomain = req.headers['x-shopify-shop-domain'];
   const sessionToken = req.body?.sessionToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
@@ -30,16 +37,20 @@ router.post('/session/verify', async (req, res) => {
     // Also accept shop from URL query params
     const shopFromQuery = req.query.shop;
     const storeIdFromQuery = req.query.store_id;
+    console.log('[DEBUG verifySession] shopFromQuery:', shopFromQuery, 'storeIdFromQuery:', storeIdFromQuery);
     if (!shopFromQuery && !storeIdFromQuery) {
       return res.status(401).json({ error: 'No session token or shop domain provided' });
     }
     await db.ensureReady();
+    console.log('[DEBUG verifySession] db ready, querying store...');
     let store = null;
     if (shopFromQuery) {
       store = await StoreModel.findByShop(shopFromQuery);
+      console.log('[DEBUG verifySession] findByShop result:', store);
     }
     if (!store && storeIdFromQuery) {
       store = await StoreModel.findById(storeIdFromQuery);
+      console.log('[DEBUG verifySession] findById result:', store);
     }
     if (!store) return res.status(401).json({ error: 'Store not found' });
     return res.json({ store: { id: store.id, shop: store.shop } });
