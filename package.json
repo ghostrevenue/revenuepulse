@@ -5,7 +5,7 @@
   "main": "app.js",
   "type": "module",
   "scripts": {
-    "build": "esbuild app/frontend/src/index.jsx --bundle --outfile=app/frontend/dist/bundle.js --loader:.jsx=jsx --define:process.env.NODE_ENV=production",
+    "build": "esbuild app/frontend/src/index.jsx --bundle --outfile=app/frontend/dist/bundle.js --loader:.jsx=jsx",
     "start": "node app.js",
     "dev": "node --watch app.js"
   },
