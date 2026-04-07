@@ -43,9 +43,9 @@ router.post('/session/verify', async (req, res) => {
     const apiSecret = process.env.SHOPIFY_API_SECRET;
     if (apiSecret) {
       try {
-        const paramsForHmac = { ...req.body };
-        delete paramsForHmac.hmac; // HMAC itself is not part of the signed message
-        const verified = verifyShopifyHmac(paramsForHmac, apiSecret);
+        // verifyShopifyHmac extracts hmac internally via destructuring,
+        // so pass the full body with hmac still present
+        const verified = verifyShopifyHmac(req.body, apiSecret);
         if (!verified) {
           return res.status(401).json({ error: 'HMAC verification failed' });
         }
