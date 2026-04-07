@@ -62,6 +62,16 @@ export default function App() {
         const params = new URLSearchParams(window.location.search);
         const shopFromUrl = params.get('shop');
         const storeIdFromUrl = params.get('store_id');
+        const hmacFromUrl = params.get('hmac');
+        const hostFromUrl = params.get('host');
+        const timestampFromUrl = params.get('timestamp');
+
+        // Partners Dashboard OAuth install flow — redirect to backend OAuth handler
+        // which will verify HMAC and redirect to Shopify's authorize URL
+        if (hmacFromUrl && shopFromUrl && hostFromUrl) {
+          window.location.href = `/api/auth/partners-start?hmac=${encodeURIComponent(hmacFromUrl)}&shop=${encodeURIComponent(shopFromUrl)}&host=${encodeURIComponent(hostFromUrl)}&timestamp=${encodeURIComponent(timestampFromUrl || '')}`;
+          return;
+        }
 
         if (shopFromUrl || storeIdFromUrl) {
           // Verify the session

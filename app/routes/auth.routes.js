@@ -126,6 +126,54 @@ router.post('/session/verify', async (req, res) => {
   return res.status(401).json({ error: 'Authentication required' });
 });
 
+// GET /api/auth/partners-start — initiates OAuth from Partners Dashboard install
+// Receives OAuth params from the frontend redirect (GET ?hmac&host&shop&timestamp)
+// Verifies HMAC, provisions store, then redirects merchant to Shopify's authorize URL
+router.get('/partners-start', async (req, res) => {
+  const { hmac, host, shop: shopFromOAuth, timestamp } = req.query;
+  console.log('[/api/auth/partners-start] query:', JSON.stringify(req.query));
+
+  if (!hmac || !shopFromOAuth) {
+    return res.status(400).json({ error: 'Missing required OAuth params' });
+  }
+
+  const apiSecret = process.env.SHOPIFY_API_SECRET;
+  if (apiSecret) {
+    try {
+      const verified = verifyShopifyHmac(req.query, apiSecret);
+      if (!verified) {
+        return res.status(401).json({ error: 'HMAC verification failed' });
+      }
+    } catch (e) {
+      return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
+    }
+  }
+
+  // Provision store if new
+  await db.ensureReady();
+  let store = await StoreModel.findByShop(shopFromOAuth);
+  if (!store) {
+    const id = uuidv4();
+    await StoreModel.create({ id, shop: shopFromOAuth, accessToken: null, scope: 'read_orders,read_products,read_analytics' });
+    console.log('[/api/auth/partners-start] store created for', shopFromOAuth);
+  } else {
+    console.log('[/api/auth/partners-start] store found for', shopFromOAuth);
+  }
+
+  // Build Shopify OAuth authorize URL
+  const apiKey = process.env.SHOPIFY_API_KEY;
+  const appUrl = (process.env.APP_URL || 'https://revenuepulse-production.up.railway.app')
+    .replace(/^http:\/\//, 'https://');
+  const scopes = 'read_orders,read_products,read_analytics';
+  const redirectUri = `${appUrl}/api/auth/callback`;
+  const state = uuidv4(); // CSRF token
+
+  const authUrl = `https://${shopFromOAuth}/admin/oauth/authorize?client_id=${apiKey}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&hmac=${hmac}&timestamp=${timestamp || ''}&host=${encodeURIComponent(host || '')}`;
+
+  console.log('[/api/auth/partners-start] redirecting to:', authUrl);
+  res.redirect(authUrl);
+});
+
 // OAuth callback — Shopify redirects here after merchant authorizes
 router.get('/callback', async (req, res) => {
   try {
