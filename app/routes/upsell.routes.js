@@ -152,14 +152,22 @@ router.get('/offers', verifyShop, async (req, res) => {
 });
 
 // ── POST /api/upsell/offers ────────────────────────────────────────────────────
-// Create a new upsell offer
+// Create a new upsell offer (status defaults to 'draft')
 router.post('/offers', verifyShop, async (req, res) => {
   const {
     offer_type, trigger_min_amount, trigger_product_ids,
     upsell_product_id, upsell_discount_code, upsell_discount_value,
     headline, message, active,
     ab_variant_group_id, traffic_split,
-    fallback_for_offer_id
+    fallback_for_offer_id,
+    // Rich targeting
+    status, target_type,
+    include_product_ids, include_collection_ids, include_tags,
+    exclude_product_ids, exclude_collection_ids, exclude_tags,
+    target_first_time_customer, target_customer_tags,
+    trigger_max_amount, target_collection_ids,
+    // Legacy
+    target_tags
   } = req.body;
 
   if (!offer_type) return res.status(400).json({ error: 'offer_type is required' });
@@ -171,6 +179,34 @@ router.post('/offers', verifyShop, async (req, res) => {
     const storeId = req.store.id;
     const triggerJson = trigger_product_ids ? JSON.stringify(trigger_product_ids) : null;
     const activeVal = active !== undefined ? (active ? 1 : 0) : 1;
+    const statusVal = status || 'draft';
+    const targetTypeVal = target_type || 'any';
+
+    // JSON array fields
+    const includeProductIds = include_product_ids
+      ? (Array.isArray(include_product_ids) ? JSON.stringify(include_product_ids) : include_product_ids)
+      : null;
+    const includeCollectionIds = include_collection_ids
+      ? (Array.isArray(include_collection_ids) ? JSON.stringify(include_collection_ids) : include_collection_ids)
+      : null;
+    const includeTags = include_tags
+      ? (Array.isArray(include_tags) ? JSON.stringify(include_tags) : include_tags)
+      : null;
+    const excludeProductIds = exclude_product_ids
+      ? (Array.isArray(exclude_product_ids) ? JSON.stringify(exclude_product_ids) : exclude_product_ids)
+      : null;
+    const excludeCollectionIds = exclude_collection_ids
+      ? (Array.isArray(exclude_collection_ids) ? JSON.stringify(exclude_collection_ids) : exclude_collection_ids)
+      : null;
+    const excludeTags = exclude_tags
+      ? (Array.isArray(exclude_tags) ? JSON.stringify(exclude_tags) : exclude_tags)
+      : null;
+    const targetCustomerTags = target_customer_tags
+      ? (Array.isArray(target_customer_tags) ? JSON.stringify(target_customer_tags) : target_customer_tags)
+      : null;
+    const targetCollectionIds = target_collection_ids
+      ? (Array.isArray(target_collection_ids) ? JSON.stringify(target_collection_ids) : target_collection_ids)
+      : (target_tags ? target_tags : null); // fallback to legacy target_tags
 
     const params = [
       storeId, offer_type,
@@ -184,7 +220,19 @@ router.post('/offers', verifyShop, async (req, res) => {
       activeVal,
       ab_variant_group_id || null,
       traffic_split !== undefined ? traffic_split : 100,
-      fallback_for_offer_id || null
+      fallback_for_offer_id || null,
+      statusVal,
+      targetTypeVal,
+      includeProductIds,
+      includeCollectionIds,
+      includeTags,
+      excludeProductIds,
+      excludeCollectionIds,
+      excludeTags,
+      target_first_time_customer ? 1 : 0,
+      targetCustomerTags,
+      trigger_max_amount || 0,
+      targetCollectionIds
     ];
 
     if (db.usePostgres) {
@@ -192,8 +240,13 @@ router.post('/offers', verifyShop, async (req, res) => {
         INSERT INTO upsell_offers
           (store_id, offer_type, trigger_min_amount, trigger_product_ids,
            upsell_product_id, upsell_discount_code, upsell_discount_value,
-           headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id,
+           status, target_type,
+           include_product_ids, include_collection_ids, include_tags,
+           exclude_product_ids, exclude_collection_ids, exclude_tags,
+           target_first_time_customer, target_customer_tags,
+           trigger_max_amount, target_collection_ids)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
       `).run(...params);
       const offer = await db.prepare('SELECT * FROM upsell_offers WHERE id = (SELECT MAX(id) FROM upsell_offers WHERE store_id = $1)').get(storeId);
       return res.json({ offer });
@@ -202,8 +255,13 @@ router.post('/offers', verifyShop, async (req, res) => {
         INSERT INTO upsell_offers
           (store_id, offer_type, trigger_min_amount, trigger_product_ids,
            upsell_product_id, upsell_discount_code, upsell_discount_value,
-           headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id,
+           status, target_type,
+           include_product_ids, include_collection_ids, include_tags,
+           exclude_product_ids, exclude_collection_ids, exclude_tags,
+           target_first_time_customer, target_customer_tags,
+           trigger_max_amount, target_collection_ids)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(...params);
       const offer = db.prepare('SELECT * FROM upsell_offers WHERE id = last_insert_rowid()').get();
       return res.json({ offer });
@@ -227,13 +285,22 @@ router.get('/offers/:id', verifyShop, async (req, res) => {
 });
 
 // ── PUT /api/upsell/offers/:id ────────────────────────────────────────────────
+// Update an offer (cannot update archived offers)
 router.put('/offers/:id', verifyShop, async (req, res) => {
   const {
     offer_type, trigger_min_amount, trigger_product_ids,
     upsell_product_id, upsell_discount_code, upsell_discount_value,
     headline, message, active,
     ab_variant_group_id, traffic_split,
-    fallback_for_offer_id
+    fallback_for_offer_id,
+    // Rich targeting
+    status, target_type,
+    include_product_ids, include_collection_ids, include_tags,
+    exclude_product_ids, exclude_collection_ids, exclude_tags,
+    target_first_time_customer, target_customer_tags,
+    trigger_max_amount, target_collection_ids,
+    // Legacy
+    target_tags
   } = req.body;
 
   try {
@@ -241,9 +308,38 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
       ? await db.prepare('SELECT * FROM upsell_offers WHERE id = $1 AND store_id = $2').get(req.params.id, req.store.id)
       : db.prepare('SELECT * FROM upsell_offers WHERE id = ? AND store_id = ?').get(req.params.id, req.store.id);
     if (!existing) return res.status(404).json({ error: 'Offer not found' });
+    if (existing.status === 'archived') {
+      return res.status(403).json({ error: 'Cannot edit an archived offer. Duplicate it to create a new one.' });
+    }
 
     const triggerJson = trigger_product_ids ? JSON.stringify(trigger_product_ids) : existing.trigger_product_ids;
     const activeVal = active !== undefined ? (active ? 1 : 0) : existing.active;
+
+    // JSON array fields - serialize if arrays passed
+    const includeProductIds = include_product_ids !== undefined
+      ? (Array.isArray(include_product_ids) ? JSON.stringify(include_product_ids) : include_product_ids)
+      : existing.include_product_ids;
+    const includeCollectionIds = include_collection_ids !== undefined
+      ? (Array.isArray(include_collection_ids) ? JSON.stringify(include_collection_ids) : include_collection_ids)
+      : existing.include_collection_ids;
+    const includeTags = include_tags !== undefined
+      ? (Array.isArray(include_tags) ? JSON.stringify(include_tags) : include_tags)
+      : existing.include_tags;
+    const excludeProductIds = exclude_product_ids !== undefined
+      ? (Array.isArray(exclude_product_ids) ? JSON.stringify(exclude_product_ids) : exclude_product_ids)
+      : existing.exclude_product_ids;
+    const excludeCollectionIds = exclude_collection_ids !== undefined
+      ? (Array.isArray(exclude_collection_ids) ? JSON.stringify(exclude_collection_ids) : exclude_collection_ids)
+      : existing.exclude_collection_ids;
+    const excludeTags = exclude_tags !== undefined
+      ? (Array.isArray(exclude_tags) ? JSON.stringify(exclude_tags) : exclude_tags)
+      : existing.exclude_tags;
+    const targetCustomerTags = target_customer_tags !== undefined
+      ? (Array.isArray(target_customer_tags) ? JSON.stringify(target_customer_tags) : target_customer_tags)
+      : existing.target_customer_tags;
+    const targetCollectionIds = target_collection_ids !== undefined
+      ? (Array.isArray(target_collection_ids) ? JSON.stringify(target_collection_ids) : target_collection_ids)
+      : (target_tags ? target_tags : existing.target_collection_ids);
 
     const params = [
       offer_type ?? existing.offer_type,
@@ -258,6 +354,18 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
       ab_variant_group_id ?? existing.ab_variant_group_id,
       traffic_split !== undefined ? traffic_split : existing.traffic_split,
       fallback_for_offer_id ?? existing.fallback_for_offer_id,
+      status ?? existing.status,
+      target_type ?? existing.target_type ?? 'any',
+      includeProductIds,
+      includeCollectionIds,
+      includeTags,
+      excludeProductIds,
+      excludeCollectionIds,
+      excludeTags,
+      target_first_time_customer !== undefined ? (target_first_time_customer ? 1 : 0) : (existing.target_first_time_customer ?? 0),
+      targetCustomerTags,
+      trigger_max_amount ?? existing.trigger_max_amount ?? 0,
+      targetCollectionIds,
       req.params.id,
       req.store.id
     ];
@@ -269,8 +377,13 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
           upsell_product_id = $4, upsell_discount_code = $5, upsell_discount_value = $6,
           headline = $7, message = $8, active = $9,
           ab_variant_group_id = $10, traffic_split = $11, fallback_for_offer_id = $12,
+          status = $13, target_type = $14,
+          include_product_ids = $15, include_collection_ids = $16, include_tags = $17,
+          exclude_product_ids = $18, exclude_collection_ids = $19, exclude_tags = $20,
+          target_first_time_customer = $21, target_customer_tags = $22,
+          trigger_max_amount = $23, target_collection_ids = $24,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $13 AND store_id = $14
+        WHERE id = $25 AND store_id = $26
       `).run(...params);
     } else {
       db.prepare(`
@@ -279,6 +392,11 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
           upsell_product_id = ?, upsell_discount_code = ?, upsell_discount_value = ?,
           headline = ?, message = ?, active = ?,
           ab_variant_group_id = ?, traffic_split = ?, fallback_for_offer_id = ?,
+          status = ?, target_type = ?,
+          include_product_ids = ?, include_collection_ids = ?, include_tags = ?,
+          exclude_product_ids = ?, exclude_collection_ids = ?, exclude_tags = ?,
+          target_first_time_customer = ?, target_customer_tags = ?,
+          trigger_max_amount = ?, target_collection_ids = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND store_id = ?
       `).run(...params);
@@ -294,15 +412,27 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
 });
 
 // ── DELETE /api/upsell/offers/:id ─────────────────────────────────────────────
-// Soft-deactivate an offer
+// Soft-delete (archive) an offer — set status to 'archived'
 router.delete('/offers/:id', verifyShop, async (req, res) => {
+  const { hard } = req.query; // ?hard=1 to permanently delete
   try {
-    if (db.usePostgres) {
-      await db.prepare('UPDATE upsell_offers SET active = 0 WHERE id = $1 AND store_id = $2').run(req.params.id, req.store.id);
+    if (hard === '1') {
+      // Hard delete
+      if (db.usePostgres) {
+        await db.prepare('DELETE FROM upsell_offers WHERE id = $1 AND store_id = $2').run(req.params.id, req.store.id);
+      } else {
+        db.prepare('DELETE FROM upsell_offers WHERE id = ? AND store_id = ?').run(req.params.id, req.store.id);
+      }
+      return res.json({ success: true, deleted: 'hard' });
     } else {
-      db.prepare('UPDATE upsell_offers SET active = 0 WHERE id = ? AND store_id = ?').run(req.params.id, req.store.id);
+      // Soft delete — archive the offer
+      if (db.usePostgres) {
+        await db.prepare("UPDATE upsell_offers SET status = 'archived', active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND store_id = $2").run(req.params.id, req.store.id);
+      } else {
+        db.prepare("UPDATE upsell_offers SET status = 'archived', active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?").run(req.params.id, req.store.id);
+      }
+      return res.json({ success: true, deleted: 'archived' });
     }
-    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -534,35 +664,130 @@ router.get('/check/:order_id', async (req, res) => {
 
   const totalPrice = parseFloat(order.total_price || 0);
   const lineItemIds = (order.line_items || []).map(li => String(li.product_id));
+  const lineItemCollectionIds = []; // We'll resolve collections if needed
 
-  // Find active offers matching the order criteria
+  // Fetch customer for first-time customer check
+  let customer = null;
+  if (order.customer && order.customer.id) {
+    try {
+      const custRes = await fetch(`https://${shop}/admin/api/2024-01/customers/${order.customer.id}.json`, {
+        headers: { 'X-Shopify-Access-Token': store.access_token }
+      });
+      if (custRes.ok) customer = (await custRes.json()).customer;
+    } catch (e) {
+      console.error('[check] Customer fetch error:', e.message);
+    }
+  }
+
+  // Find PUBLISHED offers matching the order criteria
   let offers;
   if (db.usePostgres) {
     offers = await db.prepare(`
       SELECT * FROM upsell_offers
-      WHERE store_id = $1 AND active = 1 AND trigger_min_amount <= $2
+      WHERE store_id = $1 AND status = 'published' AND active = 1
+      AND trigger_min_amount <= $2
       AND (fallback_for_offer_id IS NULL OR fallback_for_offer_id = '')
       ORDER BY trigger_min_amount DESC
     `).all(store.id, totalPrice);
   } else {
     offers = db.prepare(`
       SELECT * FROM upsell_offers
-      WHERE store_id = ? AND active = 1 AND trigger_min_amount <= ?
+      WHERE store_id = ? AND status = 'published' AND active = 1
+      AND trigger_min_amount <= ?
       AND (fallback_for_offer_id IS NULL OR fallback_for_offer_id = '')
       ORDER BY trigger_min_amount DESC
     `).all(store.id, totalPrice);
   }
 
-  // Find best matching offer (by product ids if specified)
-  const matchingOffer = offers.find(offer => {
-    if (!offer.trigger_product_ids) return true;
+  // Helper: parse JSON array field
+  function parseJsonField(field) {
+    if (!field) return [];
     try {
-      const triggerIds = JSON.parse(offer.trigger_product_ids);
-      if (!Array.isArray(triggerIds)) return true;
-      return triggerIds.some(id => lineItemIds.includes(String(id)));
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
-      return true;
+      return [];
     }
+  }
+
+  // Helper: check if order contains any of the target items
+  function orderContainsAny(targetIds) {
+    if (!targetIds || targetIds.length === 0) return true;
+    return targetIds.some(id => lineItemIds.includes(String(id)));
+  }
+
+  // Helper: check if order contains all of the target items (for target_type = 'all')
+  function orderContainsAll(targetIds) {
+    if (!targetIds || targetIds.length === 0) return true;
+    return targetIds.every(id => lineItemIds.includes(String(id)));
+  }
+
+  // Find best matching offer with rich targeting
+  const matchingOffer = offers.find(offer => {
+    // Check trigger_max_amount (optional upper threshold)
+    if (offer.trigger_max_amount && offer.trigger_max_amount > 0) {
+      if (totalPrice > offer.trigger_max_amount) return false;
+    }
+
+    // Parse targeting fields
+    const includeProductIds = parseJsonField(offer.include_product_ids);
+    const includeCollectionIds = parseJsonField(offer.include_collection_ids);
+    const includeTags = parseJsonField(offer.include_tags);
+    const excludeProductIds = parseJsonField(offer.exclude_product_ids);
+    const excludeCollectionIds = parseJsonField(offer.exclude_collection_ids);
+    const excludeTags = parseJsonField(offer.exclude_tags);
+    const targetType = offer.target_type || 'any';
+
+    // Check EXCLUDE rules first — if ANY exclude matches, skip this offer
+    if (excludeProductIds.length > 0 && orderContainsAny(excludeProductIds)) return false;
+    if (excludeCollectionIds.length > 0) {
+      // Would need product→collection lookup; skip for now unless products have collection data
+      // For now, skip if we can't resolve
+    }
+    if (excludeTags.length > 0) {
+      // Would need product tags; skip for now
+    }
+
+    // Check INCLUDE rules
+    // If include_* fields are set, the order MUST match at least one
+    if (includeProductIds.length > 0) {
+      if (!orderContainsAny(includeProductIds)) return false;
+    }
+    if (includeCollectionIds.length > 0) {
+      // Would need product→collection lookup
+    }
+    if (includeTags.length > 0) {
+      // Would need product tags
+    }
+
+    // Legacy trigger_product_ids check
+    if (offer.trigger_product_ids) {
+      try {
+        const triggerIds = JSON.parse(offer.trigger_product_ids);
+        if (Array.isArray(triggerIds) && triggerIds.length > 0) {
+          const hasMatch = triggerIds.some(id => lineItemIds.includes(String(id)));
+          if (!hasMatch) return false;
+        }
+      } catch {}
+    }
+
+    // First-time customer check
+    if (offer.target_first_time_customer === 1) {
+      const orderCount = customer?.orders_count || 0;
+      if (orderCount > 1) return false; // Not first-time if they have prior orders
+    }
+
+    // Customer tags check
+    if (offer.target_customer_tags) {
+      const customerTags = parseJsonField(offer.target_customer_tags);
+      if (customerTags.length > 0) {
+        const custTags = (customer?.tags || '').split(',').map(t => t.trim());
+        const hasTag = customerTags.some(tag => custTags.includes(tag));
+        if (!hasTag) return false;
+      }
+    }
+
+    return true;
   });
 
   if (!matchingOffer) return res.json({ offer: null, reason: 'no_matching_offer' });

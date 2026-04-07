@@ -5,6 +5,7 @@ import Analytics from './pages/Analytics.jsx';
 import Billing from './pages/Billing.jsx';
 import OfferBuilder from './pages/OfferBuilder.jsx';
 import UpsellConfirmation from './pages/UpsellConfirmation.jsx';
+import UpsellPreview from './pages/UpsellPreview.jsx';
 import Settings from './pages/Settings.jsx';
 
 const ROUTES = {
@@ -13,7 +14,7 @@ const ROUTES = {
   '#/analytics': Analytics,
   '#/billing': Billing,
   '#/settings': Settings,
-  '#/upsell-preview': UpsellConfirmation,
+  '#/upsell-preview': UpsellPreview,
 };
 
 function Sidebar({ activePage, setActivePage, store }) {
@@ -78,6 +79,13 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+      
+      // Handle #/upsell-preview/:offerId route
+      if (hash && hash.startsWith('#/upsell-preview')) {
+        setActivePage('#/upsell-preview');
+        return;
+      }
+      
       if (hash && ROUTES[hash]) {
         setActivePage(hash);
       } else if (!hash || hash === '#' || hash === '#/') {

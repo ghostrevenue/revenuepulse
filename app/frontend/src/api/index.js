@@ -76,8 +76,43 @@ export const api = {
     body: JSON.stringify(data)
   }),
 
-  // DELETE /api/upsell/offers/:id — delete offer
+  // DELETE /api/upsell/offers/:id — soft-delete (archive) offer
   deleteUpsellOffer: (id) => apiFetch(`/api/upsell/offers/${id}`, { method: 'DELETE' }),
+
+  // DELETE /api/upsell/offers/:id?hard=1 — hard-delete offer permanently
+  hardDeleteUpsellOffer: (id) => apiFetch(`/api/upsell/offers/${id}?hard=1`, { method: 'DELETE' }),
+
+  // PUT /api/upsell/offers/:id — toggle publish/unpublish
+  togglePublishOffer: (id, publish) => apiFetch(`/api/upsell/offers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: publish ? 'published' : 'draft' })
+  }),
+
+  // --- UPSELL PREVIEW ---
+  // GET /api/upsell/preview/:id — preview a specific offer (merchant view)
+  getUpsellPreview: (offerId) => apiFetch(`/api/upsell/preview/${offerId}`),
+
+  // --- A/B TESTING ---
+  // POST /api/upsell/offers/:id/clone — clone offer as variant B (creates A/B test)
+  cloneOfferForABTest: (offerId, data) => apiFetch(`/api/upsell/offers/${offerId}/clone`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+
+  // GET /api/upsell/ab-tests — list all active A/B tests
+  getABTests: () => apiFetch('/api/upsell/ab-tests'),
+
+  // PUT /api/upsell/ab-tests/:id — update A/B test (traffic split, pause, etc.)
+  updateABTest: (testId, data) => apiFetch(`/api/upsell/ab-tests/${testId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+
+  // DELETE /api/upsell/ab-tests/:id — delete/stop A/B test
+  deleteABTest: (testId) => apiFetch(`/api/upsell/ab-tests/${testId}`, { method: 'DELETE' }),
+
+  // GET /api/upsell/ab-tests/:id/results — get A/B test results
+  getABTestResults: (testId) => apiFetch(`/api/upsell/ab-tests/${testId}/results`),
 
   // --- UPSELL STOREFRONT ---
   // GET /api/upsell/check/:order_id — check if order qualifies for upsell
@@ -109,4 +144,15 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ plan })
   }),
+
+  // --- SHOPIFY STORE DATA (for targeting selectors) ---
+  // GET /api/shopify/products?query=search&limit=50
+  searchShopifyProducts: (query = '', limit = 50) =>
+    apiFetch(`/api/shopify/products?query=${encodeURIComponent(query)}&limit=${limit}`),
+
+  // GET /api/shopify/collections
+  getShopifyCollections: () => apiFetch('/api/shopify/collections'),
+
+  // GET /api/shopify/product-tags
+  getShopifyProductTags: () => apiFetch('/api/shopify/product-tags'),
 };

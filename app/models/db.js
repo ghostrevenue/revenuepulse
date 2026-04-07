@@ -80,6 +80,7 @@ async function initSqlite() {
       store_id TEXT NOT NULL,
       offer_type TEXT NOT NULL DEFAULT 'add_product',
       trigger_min_amount REAL DEFAULT 0,
+      trigger_max_amount REAL DEFAULT 0,
       trigger_product_ids TEXT,
       upsell_product_id TEXT,
       upsell_discount_code TEXT,
@@ -92,6 +93,19 @@ async function initSqlite() {
       traffic_split INTEGER DEFAULT 100,
       -- Fallback sequence
       fallback_for_offer_id INTEGER,
+      -- Status: draft | published | archived
+      status TEXT DEFAULT 'draft',
+      -- Rich targeting
+      target_type TEXT DEFAULT 'any',
+      include_product_ids TEXT,
+      include_collection_ids TEXT,
+      include_tags TEXT,
+      exclude_product_ids TEXT,
+      exclude_collection_ids TEXT,
+      exclude_tags TEXT,
+      target_first_time_customer INTEGER DEFAULT 0,
+      target_customer_tags TEXT,
+      target_collection_ids TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (store_id) REFERENCES stores(id)
@@ -130,6 +144,46 @@ async function initSqlite() {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(dbPath, buffer);
+
+  // ── SQLite Migrations: add columns to existing tables ────────────────────────
+  // These run AFTER table creation; IF NOT EXISTS won't add columns
+  function addColIfMissing(table, col, type, defaultVal) {
+    try {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+      if (defaultVal !== undefined) {
+        // SQLite doesn't support ADD COLUMN with DEFAULT, update existing rows
+        db.run(`UPDATE ${table} SET ${col} = ${defaultVal} WHERE ${col} IS NULL`);
+      }
+    } catch (e) {
+      // Column may already exist — ignore
+    }
+  }
+
+  addColIfMissing('upsell_offers', 'status', 'TEXT', "'draft'");
+  addColIfMissing('upsell_offers', 'target_type', 'TEXT', "'any'");
+  addColIfMissing('upsell_offers', 'include_product_ids', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'include_collection_ids', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'include_tags', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'exclude_product_ids', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'exclude_collection_ids', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'exclude_tags', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'target_first_time_customer', 'INTEGER', 0);
+  addColIfMissing('upsell_offers', 'target_customer_tags', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'trigger_max_amount', 'REAL', 0);
+  addColIfMissing('upsell_offers', 'target_collection_ids', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'ab_variant_group_id', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'traffic_split', 'INTEGER', 100);
+  addColIfMissing('upsell_offers', 'fallback_for_offer_id', 'INTEGER', null);
+  addColIfMissing('upsell_responses', 'added_revenue', 'REAL', 0);
+  addColIfMissing('stores', 'upsell_config', 'TEXT', null);
+  addColIfMissing('stores', 'scope', 'TEXT', null);
+  addColIfMissing('stores', 'access_token', 'TEXT', null);
+  addColIfMissing('stores', 'created_at', 'DATETIME', "datetime('now')");
+
+  // Persist after migrations
+  const data2 = db.export();
+  const buffer2 = Buffer.from(data2);
+  fs.writeFileSync(dbPath, buffer2);
 
   return db;
 }
@@ -186,6 +240,7 @@ async function initPostgres() {
       store_id TEXT NOT NULL,
       offer_type TEXT NOT NULL DEFAULT 'add_product',
       trigger_min_amount REAL DEFAULT 0,
+      trigger_max_amount REAL DEFAULT 0,
       trigger_product_ids TEXT,
       upsell_product_id TEXT,
       upsell_discount_code TEXT,
@@ -196,6 +251,19 @@ async function initPostgres() {
       ab_variant_group_id UUID,
       traffic_split INTEGER DEFAULT 100,
       fallback_for_offer_id UUID,
+      -- Status: draft | published | archived
+      status TEXT DEFAULT 'draft',
+      -- Rich targeting
+      target_type TEXT DEFAULT 'any',
+      include_product_ids TEXT,
+      include_collection_ids TEXT,
+      include_tags TEXT,
+      exclude_product_ids TEXT,
+      exclude_collection_ids TEXT,
+      exclude_tags TEXT,
+      target_first_time_customer INTEGER DEFAULT 0,
+      target_customer_tags TEXT,
+      target_collection_ids TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -259,6 +327,91 @@ async function initPostgres() {
   await pgPool.query(`
     DO $$ BEGIN
       ALTER TABLE stores ADD COLUMN upsell_config JSONB;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // ── Rich Targeting & Offer Status migrations ───────────────────────────────
+  // Status field
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN status TEXT DEFAULT 'draft';
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Target type
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN target_type TEXT DEFAULT 'any';
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Include arrays
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN include_product_ids TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN include_collection_ids TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN include_tags TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Exclude arrays
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN exclude_product_ids TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN exclude_collection_ids TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN exclude_tags TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Customer targeting
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN target_first_time_customer INTEGER DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN target_customer_tags TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Order conditions
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN trigger_max_amount REAL DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN target_collection_ids TEXT;
     EXCEPTION WHEN duplicate_column THEN NULL;
     END $$;
   `);
