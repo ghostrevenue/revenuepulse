@@ -27,10 +27,14 @@ import authRoutes from './app/routes/auth.routes.js';
 import revenueRoutes from './app/routes/revenue.routes.js';
 import billingRoutes from './app/routes/billing.routes.js';
 import webhooksRoutes from './app/routes/webhooks.routes.js';
+import upsellRoutes from './app/routes/upsell.routes.js';
+import dashboardRoutes from './app/routes/dashboard.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/upsell', upsellRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/webhooks', webhooksRoutes);
 
 // ─── Shopify OAuth: Entry point when merchant clicks "Install" ────────────────

@@ -3,6 +3,7 @@ import { api } from './api/index.js';
 import Dashboard from './pages/Dashboard.jsx';
 import Analytics from './pages/Analytics.jsx';
 import Billing from './pages/Billing.jsx';
+import Upsells from './pages/Upsells.jsx';
 
 function Sidebar({ activePage, setActivePage, store }) {
   return (
@@ -36,6 +37,12 @@ function Sidebar({ activePage, setActivePage, store }) {
             <line x1="1" y1="10" x2="23" y2="10" />
           </svg>
           Billing
+        </div>
+        <div className={`nav-item ${activePage === 'upsells' ? 'active' : ''}`} onClick={() => setActivePage('upsells')}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+          </svg>
+          Upsells
         </div>
       </nav>
       <div className="sidebar-footer">
@@ -120,6 +127,7 @@ export default function App() {
         {activePage === 'dashboard' && <Dashboard store={store} appConfig={appConfig} />}
         {activePage === 'analytics' && <Analytics store={store} appConfig={appConfig} />}
         {activePage === 'billing' && <Billing store={store} appConfig={appConfig} />}
+        {activePage === 'upsells' && <Upsells store={store} appConfig={appConfig} />}
       </main>
     </div>
   );

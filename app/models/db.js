@@ -34,6 +34,7 @@ async function initSqlite() {
       shop TEXT UNIQUE NOT NULL,
       access_token TEXT,
       scope TEXT,
+      upsell_config TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -69,6 +70,40 @@ async function initSqlite() {
       received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       processed_at DATETIME,
       status TEXT DEFAULT 'received'
+    )
+  `);
+
+  // Upsell offers table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS upsell_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_id TEXT NOT NULL,
+      offer_type TEXT NOT NULL DEFAULT 'add_product',
+      trigger_min_amount REAL DEFAULT 0,
+      trigger_product_ids TEXT,
+      upsell_product_id TEXT,
+      upsell_discount_code TEXT,
+      upsell_discount_value REAL,
+      headline TEXT,
+      message TEXT,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (store_id) REFERENCES stores(id)
+    )
+  `);
+
+  // Upsell responses table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS upsell_responses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      offer_id INTEGER,
+      response TEXT NOT NULL,
+      offer_type TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (store_id) REFERENCES stores(id)
     )
   `);
 
@@ -123,6 +158,46 @@ async function initPostgres() {
       processed_at TIMESTAMP,
       status TEXT DEFAULT 'received'
     )
+  `);
+
+  // Upsell offers table
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS upsell_offers (
+      id SERIAL PRIMARY KEY,
+      store_id TEXT NOT NULL,
+      offer_type TEXT NOT NULL DEFAULT 'add_product',
+      trigger_min_amount REAL DEFAULT 0,
+      trigger_product_ids TEXT,
+      upsell_product_id TEXT,
+      upsell_discount_code TEXT,
+      upsell_discount_value REAL,
+      headline TEXT,
+      message TEXT,
+      active INTEGER DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Upsell responses table
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS upsell_responses (
+      id SERIAL PRIMARY KEY,
+      store_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      offer_id INTEGER,
+      response TEXT NOT NULL,
+      offer_type TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Add upsell_config column to stores if it doesn't exist
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE stores ADD COLUMN upsell_config JSONB;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
   `);
 }
 

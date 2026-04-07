@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import db from '../models/db.js';
+import { StoreModel } from '../models/store.js';
 
 const router = express.Router();
 
@@ -114,6 +115,37 @@ router.post('/shop/redact', verifyShopifyWebhook, async (req, res) => {
     message: 'Shop data redaction acknowledged',
     shop: req.shopDomain
   });
+});
+
+// ── Shopify Order Created Webhook ────────────────────────────────────────────
+router.post('/order/created', verifyShopifyWebhook, async (req, res) => {
+  const { id: orderId, total_price, line_items } = req.body;
+  console.log(`[order/created webhook] Order ${orderId} from ${req.shopDomain}`);
+
+  try {
+    const store = await StoreModel.findByShop(req.shopDomain);
+    if (!store) {
+      console.warn('[order/created] Store not found for shop:', req.shopDomain);
+      return res.status(200).json({ success: false, error: 'store_not_found' });
+    }
+
+    // Log the order creation for upsell analytics
+    if (db.usePostgres) {
+      await db.prepare(`
+        INSERT INTO upsell_responses (store_id, order_id, offer_id, response, offer_type)
+        VALUES ($1, $2, NULL, $3, $4)
+      `).run(store.id, String(orderId), 'triggered', 'order_created');
+    } else {
+      db.prepare(`
+        INSERT INTO upsell_responses (store_id, order_id, offer_id, response, offer_type)
+        VALUES (?, ?, NULL, ?, ?)
+      `).run(store.id, String(orderId), 'triggered', 'order_created');
+    }
+  } catch (e) {
+    console.error('[order/created webhook] Error:', e.message);
+  }
+
+  res.status(200).json({ success: true, order_id: orderId });
 });
 
 export default router;

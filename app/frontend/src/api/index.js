@@ -80,5 +80,36 @@ export const api = {
   }),
 
   // App Bridge Config
-  getAppBridgeConfig: () => apiFetch('/api/app-bridge-config')
+  getAppBridgeConfig: () => apiFetch('/api/app-bridge-config'),
+
+  // Upsell offers
+  getUpsellOffers: () => apiFetch('/api/upsell/offers'),
+  createUpsellOffer: (data) => apiFetch('/api/upsell/offers', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  updateUpsellOffer: (id, data) => apiFetch(`/api/upsell/offer/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  deleteUpsellOffer: (id) => apiFetch(`/api/upsell/offer/${id}`, { method: 'DELETE' }),
+  getUpsellResponses: () => apiFetch('/api/upsell/responses'),
+
+  // Upsell config
+  getUpsellConfig: () => apiFetch('/api/upsell/config'),
+  saveUpsellConfig: (upsell_config) => apiFetch('/api/upsell/config', {
+    method: 'POST',
+    body: JSON.stringify({ upsell_config })
+  }),
+
+  // Upsell offer check (for storefront)
+  checkUpsellOffer: (orderId, shop) => apiFetch(`/api/upsell?order_id=${orderId}&shop=${encodeURIComponent(shop)}`),
+  acceptUpsellOffer: (data) => apiFetch('/api/upsell/accept', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  declineUpsellOffer: (data) => apiFetch('/api/upsell/decline', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
 };
