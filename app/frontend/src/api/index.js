@@ -42,11 +42,22 @@ export const api = {
   // For Partners Dashboard install flow: pass OAuth params from URL so backend
   // can verify HMAC and complete OAuth token exchange. For session token flow
   // (embedded), pass sessionToken in body.
-  verifySession: () => {
+  // verifySession: looks up the authenticated store.
+  // For Partners Dashboard install flow with OAuth params in URL, pass no args
+  //   and the backend verifies HMAC and provisions the store.
+  // For post-OAuth callback (store already installed), pass storeId to look up
+  //   by ID without needing OAuth params.
+  // For embedded/session-token flow, pass null.
+  verifySession: (storeId = null) => {
     const oAuthParams = getOAuthParams();
-    const body = oAuthParams
-      ? JSON.stringify(oAuthParams)           // Partners Dashboard install
-      : JSON.stringify({ sessionToken: null }); // Embedded/session token
+    let body;
+    if (oAuthParams) {
+      body = JSON.stringify(oAuthParams); // Partners Dashboard install
+    } else if (storeId) {
+      body = JSON.stringify({ storeId }); // Post-OAuth callback
+    } else {
+      body = JSON.stringify({ sessionToken: null }); // Embedded/session token
+    }
     return apiFetch('/api/auth/session/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

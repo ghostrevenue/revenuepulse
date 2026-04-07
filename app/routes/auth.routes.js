@@ -32,6 +32,7 @@ router.post('/session/verify', async (req, res) => {
   const authHeader = req.headers.authorization;
   const shopDomain = req.headers['x-shopify-shop-domain'];
   const sessionToken = req.body?.sessionToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
+  const storeIdFromBody = req.body?.storeId || null;
 
   // ── Partners Dashboard OAuth install flow ──────────────────────────────────
   // When a merchant clicks "Install" in the Partners Dashboard, Shopify redirects
@@ -69,7 +70,7 @@ router.post('/session/verify', async (req, res) => {
     const shopFromQuery = req.query.shop;
     const storeIdFromQuery = req.query.store_id;
     console.log('[DEBUG verifySession] shopFromQuery:', shopFromQuery, 'storeIdFromQuery:', storeIdFromQuery);
-    if (!shopFromQuery && !storeIdFromQuery) {
+    if (!shopFromQuery && !storeIdFromQuery && !storeIdFromBody) {
       return res.status(401).json({ error: 'No session token or shop domain provided' });
     }
     await db.ensureReady();
@@ -79,8 +80,8 @@ router.post('/session/verify', async (req, res) => {
       store = await StoreModel.findByShop(shopFromQuery);
       console.log('[DEBUG verifySession] findByShop result:', store);
     }
-    if (!store && storeIdFromQuery) {
-      store = await StoreModel.findById(storeIdFromQuery);
+    if (!store && (storeIdFromQuery || storeIdFromBody)) {
+      store = await StoreModel.findById(storeIdFromQuery || storeIdFromBody);
       console.log('[DEBUG verifySession] findById result:', store);
     }
     if (!store) return res.status(401).json({ error: 'Store not found' });
