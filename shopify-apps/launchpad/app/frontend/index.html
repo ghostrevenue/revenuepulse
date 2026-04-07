@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaunchPad</title>
+  <link href="https://cdn.shopify.com/@shopify/polaris/7.4.0/styles.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; }
+    .app-layout { display: flex; min-height: 100vh; }
+    .sidebar { width: 240px; background: #1a1a1a; border-right: 1px solid #2a2a2a; padding: 16px 0; position: fixed; height: 100vh; overflow-y: auto; }
+    .sidebar-logo { padding: 16px 20px; font-size: 20px; font-weight: 700; color: #fff; border-bottom: 1px solid #2a2a2a; margin-bottom: 16px; }
+    .sidebar-logo span { color: #22c55e; }
+    .sidebar-nav { list-style: none; }
+    .sidebar-nav li { }
+    .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: #9ca3af; text-decoration: none; font-size: 14px; transition: all 0.2s; }
+    .sidebar-nav a:hover { background: #222; color: #fff; }
+    .sidebar-nav a.active { background: #1e3a2f; color: #22c55e; border-right: 3px solid #22c55e; }
+    .main-content { flex: 1; margin-left: 240px; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .header h1 { font-size: 24px; font-weight: 600; color: #fff; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .card h3 { font-size: 14px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 20px; }
+    .stat-card .value { font-size: 32px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .stat-card .label { font-size: 13px; color: #9ca3af; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; text-decoration: none; }
+    .btn-primary { background: #22c55e; color: #000; }
+    .btn-primary:hover { background: #16a34a; }
+    .btn-secondary { background: #333; color: #fff; }
+    .btn-secondary:hover { background: #444; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px; border-bottom: 1px solid #2a2a2a; color: #9ca3af; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    td { padding: 12px; border-bottom: 1px solid #2a2a2a; color: #e0e0e0; font-size: 14px; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .badge-active { background: #1e3a2f; color: #22c55e; }
+    .badge-draft { background: #333; color: #9ca3af; }
+    .badge-ended { background: #2a2a2a; color: #6b7280; }
+    .input { width: 100%; padding: 10px 14px; background: #222; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 14px; }
+    .input:focus { outline: none; border-color: #22c55e; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+    textarea.input { min-height: 80px; resize: vertical; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 24px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+    .modal h2 { font-size: 18px; color: #fff; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+    .empty { text-align: center; padding: 60px 20px; color: #6b7280; }
+    .empty h3 { font-size: 18px; margin-bottom: 8px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .search-bar { display: flex; gap: 12px; margin-bottom: 16px; }
+    .search-bar .input { flex: 1; }
+    .page { animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .campaign-row:hover { background: #222; cursor: pointer; }
+    .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+    .pagination button { padding: 6px 12px; background: #333; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+    .pagination button.active { background: #22c55e; color: #000; }
+    .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .plan-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 24px; text-align: center; }
+    .plan-card.selected { border-color: #22c55e; }
+    .plan-card h3 { color: #fff; font-size: 18px; margin-bottom: 8px; }
+    .plan-card .price { font-size: 36px; font-weight: 700; color: #22c55e; margin-bottom: 16px; }
+    .plan-card .price span { font-size: 14px; color: #6b7280; }
+    .plan-card ul { list-style: none; text-align: left; margin-bottom: 20px; }
+    .plan-card li { padding: 6px 0; color: #9ca3af; font-size: 13px; }
+    .plan-card li::before { content: '✓'; color: #22c55e; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    const api = {
+      async get(path) {
+        const res = await fetch(`/api${path}`, { credentials: 'include' });
+        return res.json();
+      },
+      async post(path, data) {
+        const res = await fetch(`/api${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(data)
+        });
+        return res.json();
+      },
+      async put(path, data) {
+        const res = await fetch(`/api${path}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(data)
+        });
+        return res.json();
+      },
+      async del(path) {
+        const res = await fetch(`/api${path}`, { method: 'DELETE', credentials: 'include' });
+        return res.json();
+      }
+    };
+
+    const navItems = [
+      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+      { id: 'campaigns', label: 'Campaigns', icon: '🚀' },
+      { id: 'waitlist', label: 'Waitlist', icon: '📋' },
+      { id: 'notifications', label: 'Notifications', icon: '📧' },
+      { id: 'analytics', label: 'Analytics', icon: '📈' },
+      { id: 'billing', label: 'Billing', icon: '💳' }
+    ];
+
+    function Sidebar({ activePage, onNavigate }) {
+      return (
+        <div className="sidebar">
+          <div className="sidebar-logo">Launch<span>Pad</span></div>
+          <ul className="sidebar-nav">
+            {navItems.map(item => (
+              <li key={item.id}>
+                <a 
+                  href="#" 
+                  className={activePage === item.id ? 'active' : ''}
+                  onClick={(e) => { e.preventDefault(); onNavigate(item.id); }}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    function Dashboard({ shop }) {
+      const [stats, setStats] = useState({ totalCampaigns: 0, activeCampaigns: 0, totalSignups: 0, totalReferrals: 0 });
+      const [campaigns, setCampaigns] = useState([]);
+
+      useEffect(() => {
+        if (shop) {
+          api.get('/campaigns?shop=' + shop).then(data => {
+            setCampaigns(data.campaigns || []);
+            const active = (data.campaigns || []).filter(c => c.status === 'active');
+            setStats({
+              totalCampaigns: (data.campaigns || []).length,
+              activeCampaigns: active.length,
+              totalSignups: (data.campaigns || []).reduce((s, c) => s + (c.signup_count || 0), 0),
+              totalReferrals: (data.campaigns || []).reduce((s, c) => s + Math.floor((c.signup_count || 0) * 0.15), 0)
+            });
+          });
+        }
+      }, [shop]);
+
+      return (
+        <div className="page">
+          <div className="header">
+            <h1>Dashboard</h1>
+            <button className="btn btn-primary" onClick={() => window.navigateTo && window.navigateTo('campaigns')}>+ New Campaign</button>
+          </div>
+          <div className="stat-grid">
+            <div className="stat-card"><div className="value">{stats.activeCampaigns}</div><div className="label">Active Campaigns</div></div>
+            <div className="stat-card"><div className="value">{stats.totalSignups}</div><div className="label">Total Signups</div></div>
+            <div className="stat-card"><div className="value">{stats.totalReferrals}</div><div className="label">Referral Signups</div></div>
+            <div className="stat-card"><div className="value">{stats.totalCampaigns}</div><div className="label">Total Campaigns</div></div>
+          </div>
+          <div className="card">
+            <h3>Recent Campaigns</h3>
+            {campaigns.length === 0 ? (
+              <div className="empty"><h3>No campaigns yet</h3><p>Create your first campaign to start collecting waitlist signups.</p></div>
+            ) : (
+              <table>
+                <thead><tr><th>Name</th><th>Status</th><th>Launch Date</th><th>Signups</th></tr></thead>
+                <tbody>
+                  {campaigns.slice(0, 5).map(c => (
+                    <tr key={c.id} className="campaign-row">
+                      <td>{c.name}</td>
+                      <td><span className={`badge badge-${c.status}`}>{c.status}</span></td>
+                      <td>{c.launch_date ? new Date(c.launch_date).toLocaleDateString() : 'Not set'}</td>
+                      <td>{c.signup_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function Campaigns({ shop }) {
+      const [campaigns, setCampaigns] = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [form, setForm] = useState({ name: '', headline: '', description: '', launchDate: '', productId: '' });
+
+      const load = useCallback(() => {
+        if (shop) api.get('/campaigns?shop=' + shop).then(d => setCampaigns(d.campaigns || []));
+      }, [shop]);
+
+      useEffect(() => { load(); }, [load]);
+
+      const handleSubmit = async () => {
+        await api.post('/campaigns', { ...form, storeId: shop });
+        setShowModal(false);
+        setForm({ name: '', headline: '', description: '', launchDate: '', productId: '' });
+        load();
+      };
+
+      const handleDelete = async (id) => {
+        if (confirm('Delete this campaign?')) {
+          await api.del('/campaigns/' + id);
+          load();
+        }
+      };
+
+      return (
+        <div className="page">
+          <div className="header">
+            <h1>Campaigns</h1>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ New Campaign</button>
+          </div>
+          {campaigns.length === 0 ? (
+            <div className="card empty"><h3>No campaigns yet</h3><p>Create a campaign to start your product launch.</p></div>
+          ) : (
+            <div className="card">
+              <table>
+                <thead><tr><th>Name</th><th>Headline</th><th>Status</th><th>Launch Date</th><th>Signups</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {campaigns.map(c => (
+                    <tr key={c.id}>
+                      <td><strong>{c.name}</strong></td>
+                      <td>{c.headline || '-'}</td>
+                      <td><span className={`badge badge-${c.status}`}>{c.status}</span></td>
+                      <td>{c.launch_date ? new Date(c.launch_date).toLocaleDateString() : 'Not set'}</td>
+                      <td>{c.signup_count}</td>
+                      <td>
+                        <button className="btn btn-secondary" style={{padding: '4px 10px', fontSize: '12px'}} onClick={() => handleDelete(c.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {showModal && (
+            <div className="modal-overlay" onClick={() => setShowModal(false)}>
+              <div className="modal" onClick={e => e.stopPropagation()}>
+                <h2>Create Campaign</h2>
+                <div className="form-group"><label>Campaign Name *</label><input className="input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Summer Collection Launch" /></div>
+                <div className="form-group"><label>Headline</label><input className="input" value={form.headline} onChange={e => setForm({...form, headline: e.target.value})} placeholder="Be the first to shop our summer collection" /></div>
+                <div className="form-group"><label>Description</label><textarea className="input" value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Describe your upcoming product..." /></div>
+                <div className="form-group"><label>Product ID</label><input className="input" value={form.productId} onChange={e => setForm({...form, productId: e.target.value})} placeholder="12345678" /></div>
+                <div className="form-group"><label>Launch Date</label><input className="input" type="date" value={form.launchDate} onChange={e => setForm({...form, launchDate: e.target.value})} /></div>
+                <div className="modal-actions">
+                  <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleSubmit}>Create Campaign</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function Waitlist() {
+      const [campaigns, setCampaigns] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [subscribers, setSubscribers] = useState([]);
+      const [search, setSearch] = useState('');
+
+      useEffect(() => {
+        api.get('/campaigns?shop=demo').then(d => {
+          setCampaigns(d.campaigns || []);
+          if (d.campaigns?.length) setSelected(d.campaigns[0].id);
+        });
+      }, []);
+
+      useEffect(() => {
+        if (selected) {
+          const url = search ? `/campaigns/${selected}/waitlist?search=${search}` : `/campaigns/${selected}/waitlist`;
+          api.get(url).then(d => setSubscribers(d.subscribers || []));
+        }
+      }, [selected, search]);
+
+      return (
+        <div className="page">
+          <div className="header"><h1>Waitlist</h1></div>
+          <div className="form-group">
+            <select className="input" value={selected || ''} onChange={e => setSelected(e.target.value)}>
+              <option value="">Select campaign...</option>
+              {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          {selected && (
+            <>
+              <div className="search-bar">
+                <input className="input" placeholder="Search subscribers..." value={search} onChange={e => setSearch(e.target.value)} />
+                <button className="btn btn-secondary" onClick={() => window.location.href = `/api/waitlist/export/${selected}`}>Export CSV</button>
+              </div>
+              <div className="card">
+                {subscribers.length === 0 ? (
+                  <div className="empty"><h3>No subscribers yet</h3></div>
+                ) : (
+                  <table>
+                    <thead><tr><th>#</th><th>Email</th><th>Position</th><th>Referred By</th><th>Joined</th></tr></thead>
+                    <tbody>
+                      {subscribers.map(s => (
+                        <tr key={s.id}>
+                          <td>{s.position}</td>
+                          <td>{s.email}</td>
+                          <td>{s.position}</td>
+                          <td>{s.referred_by ? 'Yes' : '-'}</td>
+                          <td>{new Date(s.created_at).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    function Notifications() {
+      const [campaigns, setCampaigns] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [preview, setPreview] = useState(null);
+      const [message, setMessage] = useState('');
+
+      useEffect(() => {
+        api.get('/campaigns?shop=demo').then(d => setCampaigns(d.campaigns || []));
+      }, []);
+
+      useEffect(() => {
+        if (selected) {
+          api.get(`/campaigns/${selected}/preview`).then(d => {
+            setPreview(d);
+            setMessage(d.body || '');
+          });
+        }
+      }, [selected]);
+
+      const handleSend = async () => {
+        const result = await api.post(`/campaigns/${selected}/notify`, { message });
+        alert(`Sent: ${result.sent}, Failed: ${result.failed}`);
+      };
+
+      return (
+        <div className="page">
+          <div className="header"><h1>Notifications</h1></div>
+          <div className="grid-2">
+            <div className="card">
+              <h3>Send Launch Notification</h3>
+              <div className="form-group">
+                <label>Campaign</label>
+                <select className="input" value={selected || ''} onChange={e => setSelected(e.target.value)}>
+                  <option value="">Select...</option>
+                  {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Custom Message</label>
+                <textarea className="input" rows={8} value={message} onChange={e => setMessage(e.target.value)} />
+              </div>
+              <button className="btn btn-primary" onClick={handleSend} disabled={!selected}>Send to All Subscribers</button>
+            </div>
+            <div className="card">
+              <h3>Email Preview</h3>
+              {preview ? (
+                <>
+                  <div style={{marginBottom: '12px', color: '#9ca3af', fontSize: '13px'}}><strong>Subject:</strong> {preview.subject}</div>
+                  <div style={{whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: '1.6', color: '#e0e0e0'}}>{preview.body}</div>
+                </>
+              ) : <div className="empty"><p>Select a campaign to preview</p></div>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Analytics() {
+      const [campaigns, setCampaigns] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [analytics, setAnalytics] = useState(null);
+
+      useEffect(() => {
+        api.get('/campaigns?shop=demo').then(d => setCampaigns(d.campaigns || []));
+      }, []);
+
+      useEffect(() => {
+        if (selected) {
+          api.get(`/analytics/campaign/${selected}`).then(setAnalytics).catch(() => setAnalytics(null));
+        }
+      }, [selected]);
+
+      return (
+        <div className="page">
+          <div className="header"><h1>Analytics</h1></div>
+          <div className="form-group">
+            <select className="input" value={selected || ''} onChange={e => setSelected(e.target.value)}>
+              <option value="">Select campaign...</option>
+              {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          {analytics && (
+            <>
+              <div className="stat-grid">
+                <div className="stat-card"><div className="value">{analytics.totalSignups}</div><div className="label">Total Signups</div></div>
+                <div className="stat-card"><div className="value">{analytics.referralRate}%</div><div className="label">Referral Rate</div></div>
+                <div className="stat-card"><div className="value">{analytics.conversionRate}%</div><div className="label">Conversion Rate</div></div>
+                <div className="stat-card"><div className="value">{analytics.convertedCount}</div><div className="label">Converted</div></div>
+              </div>
+              {analytics.topReferrers?.length > 0 && (
+                <div className="card">
+                  <h3>Top Referrers</h3>
+                  <table>
+                    <thead><tr><th>Email</th><th>Position</th><th>Referral Signups</th></tr></thead>
+                    <tbody>
+                      {analytics.topReferrers.map((r, i) => (
+                        <tr key={i}><td>{r.email}</td><td>{r.position}</td><td>{r.signup_count}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+          {!selected && <div className="card empty"><h3>Select a campaign</h3><p>Choose a campaign to view its analytics.</p></div>}
+        </div>
+      );
+    }
+
+    function Billing() {
+      const [plans] = useState([
+        { id: 'starter', name: 'Starter', price: 19, features: ['1 campaign', '500 subscribers', 'Basic analytics'] },
+        { id: 'growth', name: 'Growth', price: 49, features: ['5 campaigns', 'Unlimited subscribers', 'Referral system', 'Early access'], recommended: true },
+        { id: 'pro', name: 'Pro', price: 99, features: ['Unlimited campaigns', 'Viral sharing', 'Full analytics', 'Priority support'] }
+      ]);
+      const [current, setCurrent] = useState('growth');
+
+      return (
+        <div className="page">
+          <div className="header"><h1>Billing</h1></div>
+          <div className="plan-grid">
+            {plans.map(plan => (
+              <div key={plan.id} className={`plan-card ${current === plan.id ? 'selected' : ''}`}>
+                {plan.recommended && <div style={{color: '#22c55e', fontSize: '12px', marginBottom: '8px'}}>RECOMMENDED</div>}
+                <h3>{plan.name}</h3>
+                <div className="price">${plan.price}<span>/mo</span></div>
+                <ul>{plan.features.map((f, i) => <li key={i}>{f}</li>)}</ul>
+                <button className={`btn ${current === plan.id ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setCurrent(plan.id)}>
+                  {current === plan.id ? 'Current Plan' : 'Select Plan'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [page, setPage] = useState('dashboard');
+      const [shop] = useState('demo-store.myshopify.com');
+
+      window.navigateTo = setPage;
+
+      const renderPage = () => {
+        switch(page) {
+          case 'dashboard': return <Dashboard shop={shop} />;
+          case 'campaigns': return <Campaigns shop={shop} />;
+          case 'waitlist': return <Waitlist />;
+          case 'notifications': return <Notifications />;
+          case 'analytics': return <Analytics />;
+          case 'billing': return <Billing />;
+          default: return <Dashboard shop={shop} />;
+        }
+      };
+
+      return (
+        <div className="app-layout">
+          <Sidebar activePage={page} onNavigate={setPage} />
+          <div className="main-content">{renderPage()}</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

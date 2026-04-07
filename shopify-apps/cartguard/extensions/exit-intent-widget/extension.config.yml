@@ -1,0 +1,8 @@
+name: exit-intent-widget
+version: 1.0.0
+description: Exit intent detection and cart abandonment recovery widget
+author: CartGuard
+scopes:
+  - read_orders
+  - write_orders
+  - read_products

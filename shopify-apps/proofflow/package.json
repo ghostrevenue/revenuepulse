@@ -1,0 +1,34 @@
+{
+  "name": "proofflow-social-proof",
+  "version": "1.0.0",
+  "description": "ProofFlow - Social Proof & Product Review App for Shopify",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "shopify",
+    "social-proof",
+    "reviews",
+    "ecommerce"
+  ],
+  "author": "ProofFlow",
+  "license": "MIT",
+  "dependencies": {
+    "@shopify/shopify-api": "^11.0.0",
+    "@shopify/cli": "^3.93.0",
+    "@shopify/app-bridge": "^3.7.11",
+    "@shopify/polaris": "^13.0.0",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

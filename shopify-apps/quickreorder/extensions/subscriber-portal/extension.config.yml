@@ -1,0 +1,17 @@
+name: subscriber-portal
+version: 1.0.0
+description: Customer-facing subscription portal for QuickReorder
+license: MIT
+
+extensions:
+  - name: SubscriptionWidget
+    file: src/index.js
+    type: checkout-ui
+    targets:
+      - name: product
+        file: src/SubscriptionWidget.jsx
+        type: checkout-ui-extensions
+        
+  - name: ManageSubscription
+    file: src/ManageSubscription.jsx
+    type: customer-account-ui-extension

@@ -1,0 +1,19 @@
+{
+  "name": "launchpad",
+  "version": "1.0.0",
+  "description": "Pre-launch waitlist & product launch countdown app for Shopify",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "uuid": "^9.0.1"
+  }
+}

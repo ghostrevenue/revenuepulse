@@ -1,0 +1,11 @@
+name: launch-widget
+version: 1.0.0
+description: Launch countdown and waitlist signup widget
+type: checkout_ui_extension
+ metafields:
+  - namespace: launchpad
+    key: countdown
+    type: json
+  - namespace: launchpad
+    key: waitlist_enabled
+    type: boolean

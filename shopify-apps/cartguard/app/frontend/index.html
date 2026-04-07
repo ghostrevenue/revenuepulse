@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CartGuard — Cart Abandonment Recovery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --border: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+    
+    #root { display: flex; min-height: 100vh; }
+    
+    .sidebar {
+      width: 240px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      z-index: 100;
+    }
+    
+    .sidebar-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-emerald));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    
+    .nav { flex: 1; padding: 16px 12px; }
+    
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-bottom: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    
+    .nav-item:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+    
+    .nav-item.active {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent-blue);
+      border-left: 3px solid var(--accent-blue);
+      margin-left: -3px;
+    }
+    
+    .nav-icon { width: 20px; text-align: center; }
+    
+    .main-content {
+      flex: 1;
+      margin-left: 240px;
+      padding: 32px;
+    }
+    
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    
+    .page-title {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+    }
+    
+    .btn-primary {
+      background: var(--accent-blue);
+      color: white;
+    }
+    
+    .btn-primary:hover { background: var(--accent-blue-hover); }
+    
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+    
+    .btn-secondary:hover { background: var(--border); }
+    
+    .btn-danger {
+      background: var(--accent-red);
+      color: white;
+    }
+    
+    .btn-danger:hover { opacity: 0.9; }
+    
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .card-value {
+      font-size: 32px;
+      font-weight: 700;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    
+    .stat-change {
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    
+    .stat-change.positive { color: var(--accent-emerald); }
+    .stat-change.negative { color: var(--accent-red); }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    td { font-size: 14px; }
+    
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .badge-active { background: rgba(16, 185, 129, 0.1); color: var(--accent-emerald); }
+    .badge-paused { background: rgba(245, 158, 11, 0.1); color: var(--accent-amber); }
+    .badge-draft { background: rgba(100, 116, 139, 0.1); color: var(--text-muted); }
+    .badge-exit { background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); }
+    .badge-cart { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+    .badge-threshold { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 14px;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+    
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    
+    .modal {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    
+    .modal-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+    
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    
+    .plan-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 24px;
+    }
+    
+    .plan-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    
+    .plan-card.featured {
+      border-color: var(--accent-blue);
+      position: relative;
+    }
+    
+    .plan-name {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .plan-price {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    
+    .plan-price span { font-size: 14px; font-weight: 400; color: var(--text-secondary); }
+    
+    .plan-features {
+      list-style: none;
+      margin: 20px 0;
+      text-align: left;
+    }
+    
+    .plan-features li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    
+    .plan-features li::before { content: "✓"; margin-right: 8px; color: var(--accent-emerald); }
+    
+    .funnel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 400px;
+    }
+    
+    .funnel-stage {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .funnel-bar {
+      height: 40px;
+      background: var(--accent-blue);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      font-weight: 600;
+      min-width: 100px;
+    }
+    
+    .funnel-label {
+      font-size: 14px;
+      color: var(--text-secondary);
+      min-width: 120px;
+    }
+    
+    .funnel-value {
+      font-size: 14px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+    
+    .settings-section {
+      margin-bottom: 32px;
+    }
+    
+    .settings-section h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main-content { margin-left: 0; padding: 20px; }
+      .plan-cards { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect } = React;
+
+    // API helper
+    const API = {
+      base: '/api',
+      async get(path) {
+        const res = await fetch(this.base + path);
+        return res.json();
+      },
+      async post(path, data) {
+        const res = await fetch(this.base + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        return res.json();
+      },
+      async put(path, data) {
+        const res = await fetch(this.base + path, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        return res.json();
+      },
+      async del(path) {
+        const res = await fetch(this.base + path, { method: 'DELETE' });
+        return res.json();
+      }
+    };
+
+    // Icons
+    const Icons = {
+      Dashboard: () => <span className="nav-icon">📊</span>,
+      Campaigns: () => <span className="nav-icon">📣</span>,
+      Visitors: () => <span className="nav-icon">👥</span>,
+      Analytics: () => <span className="nav-icon">📈</span>,
+      Settings: () => <span className="nav-icon">⚙️</span>,
+      Billing: () => <span className="nav-icon">💳</span>,
+      Plus: () => <span>+</span>,
+      Shield: () => <span>🛡️</span>
+    };
+
+    // Sidebar
+    function Sidebar({ activePage, setActivePage, store }) {
+      const navItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard },
+        { id: 'campaigns', label: 'Campaigns', icon: Icons.Campaigns },
+        { id: 'visitors', label: 'Visitors', icon: Icons.Visitors },
+        { id: 'analytics', label: 'Analytics', icon: Icons.Analytics },
+        { id: 'settings', label: 'Settings', icon: Icons.Settings },
+        { id: 'billing', label: 'Billing', icon: Icons.Billing }
+      ];
+
+      return (
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <div className="logo">
+              <div className="logo-icon">🛡️</div>
+              CartGuard
+            </div>
+          </div>
+          <nav className="nav">
+            {navItems.map(item => (
+              <a
+                key={item.id}
+                className={`nav-item ${activePage === item.id ? 'active' : ''}`}
+                onClick={() => setActivePage(item.id)}
+              >
+                <item.icon />
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </aside>
+      );
+    }
+
+    // Dashboard Page
+    function DashboardPage() {
+      const [stats, setStats] = useState({
+        visitors: { total: 0, abandoned: 0, recovered: 0, converted: 0, emails_captured: 0 },
+        revenue: { recovered: 0 },
+        campaigns: { total: 0, active: 0, impressions: 0, conversions: 0 },
+        rates: { abandonment: 0, recovery: 0 }
+      });
+
+      useEffect(() => {
+        loadStats();
+      }, []);
+
+      const loadStats = async () => {
+        const data = await API.get('/analytics/dashboard?store_id=demo');
+        if (data) setStats(data);
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Dashboard</h1>
+          </div>
+
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">Abandonment Rate</div>
+              <div className="stat-value" style={{ color: 'var(--accent-amber)' }}>{stats.rates.abandonment}%</div>
+              <div className="stat-change">of visitors abandon</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Recovery Rate</div>
+              <div className="stat-value" style={{ color: 'var(--accent-emerald)' }}>{stats.rates.recovery}%</div>
+              <div className="stat-change positive">of abandoned carts recovered</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Revenue Recovered</div>
+              <div className="stat-value">${stats.revenue.recovered.toFixed(0)}</div>
+              <div className="stat-change positive">from abandoned carts</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Emails Captured</div>
+              <div className="stat-value">{stats.visitors.emails_captured}</div>
+              <div className="stat-change">visitors opted in</div>
+            </div>
+          </div>
+
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">Total Visitors</div>
+              <div className="stat-value">{stats.visitors.total}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Abandoned Carts</div>
+              <div className="stat-value" style={{ color: 'var(--accent-red)' }}>{stats.visitors.abandoned}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Recovered</div>
+              <div className="stat-value" style={{ color: 'var(--accent-emerald)' }}>{stats.visitors.recovered}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Active Campaigns</div>
+              <div className="stat-value">{stats.campaigns.active}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Campaigns Page
+    function CampaignsPage() {
+      const [campaigns, setCampaigns] = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [editingCampaign, setEditingCampaign] = useState(null);
+
+      useEffect(() => {
+        loadCampaigns();
+      }, []);
+
+      const loadCampaigns = async () => {
+        const data = await API.get('/campaigns?store_id=demo');
+        setCampaigns(data.campaigns || []);
+      };
+
+      const handleSave = async (campaign) => {
+        if (editingCampaign) {
+          await API.put(`/campaigns/${editingCampaign.id}`, campaign);
+        } else {
+          await API.post('/campaigns', { ...campaign, store_id: 'demo' });
+        }
+        setShowModal(false);
+        setEditingCampaign(null);
+        loadCampaigns();
+      };
+
+      const handleDelete = async (id) => {
+        if (confirm('Delete this campaign?')) {
+          await API.del(`/campaigns/${id}`);
+          loadCampaigns();
+        }
+      };
+
+      const handleStatusToggle = async (campaign) => {
+        const newStatus = campaign.status === 'active' ? 'paused' : 'active';
+        await API.put(`/campaigns/${campaign.id}`, { status: newStatus });
+        loadCampaigns();
+      };
+
+      const getTypeBadge = (type) => {
+        const badges = {
+          'exit-intent': 'badge-exit',
+          'abandoned-cart': 'badge-cart',
+          'price-threshold': 'badge-threshold'
+        };
+        return badges[type] || 'badge-draft';
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Campaigns</h1>
+            <button className="btn btn-primary" onClick={() => { setEditingCampaign(null); setShowModal(true); }}>
+              <Icons.Plus /> New Campaign
+            </button>
+          </div>
+
+          {campaigns.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📣</div>
+              <h3>No campaigns yet</h3>
+              <p>Create your first campaign to start recovering abandoned carts.</p>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setShowModal(true)}>
+                Create Campaign
+              </button>
+            </div>
+          ) : (
+            <div className="card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Impressions</th>
+                    <th>Conversions</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaigns.map(c => (
+                    <tr key={c.id}>
+                      <td><strong>{c.name}</strong></td>
+                      <td><span className={`badge ${getTypeBadge(c.type)}`}>{c.type}</span></td>
+                      <td><span className={`badge badge-${c.status}`}>{c.status}</span></td>
+                      <td>{c.stats?.impressions || 0}</td>
+                      <td>{c.stats?.conversions || 0}</td>
+                      <td>
+                        <button className="btn btn-secondary" style={{ padding: '6px 12px', marginRight: 8 }}
+                          onClick={() => handleStatusToggle(c)}>
+                          {c.status === 'active' ? 'Pause' : 'Activate'}
+                        </button>
+                        <button className="btn btn-danger" style={{ padding: '6px 12px' }}
+                          onClick={() => handleDelete(c.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {showModal && (
+            <CampaignModal
+              campaign={editingCampaign}
+              onSave={handleSave}
+              onClose={() => { setShowModal(false); setEditingCampaign(null); }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    function CampaignModal({ campaign, onSave, onClose }) {
+      const [form, setForm] = useState({
+        name: campaign?.name || '',
+        type: campaign?.type || 'exit-intent',
+        status: campaign?.status || 'draft',
+        trigger_config: campaign?.trigger_config || { delay_ms: 5000 },
+        offer_config: campaign?.offer_config || { type: 'percentage', value: 10 },
+        display_config: campaign?.display_config || { headline: 'Wait! Don\'t leave!', button_text: 'Stay & Save' }
+      });
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(form);
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title">{campaign ? 'Edit Campaign' : 'New Campaign'}</h2>
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label className="form-label">Campaign Name</label>
+                <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Type</label>
+                <select className="form-input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                  <option value="exit-intent">Exit Intent</option>
+                  <option value="abandoned-cart">Abandoned Cart</option>
+                  <option value="price-threshold">Price Threshold</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-input" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Offer Type</label>
+                <select className="form-input" value={form.offer_config.type} onChange={e => setForm({ ...form, offer_config: { ...form.offer_config, type: e.target.value } })}>
+                  <option value="percentage">Percentage Off</option>
+                  <option value="fixed">Fixed Amount</option>
+                  <option value="free-shipping">Free Shipping</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Offer Value</label>
+                <input type="number" className="form-input" value={form.offer_config.value} 
+                  onChange={e => setForm({ ...form, offer_config: { ...form.offer_config, value: parseFloat(e.target.value) } })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Headline</label>
+                <input className="form-input" value={form.display_config.headline} 
+                  onChange={e => setForm({ ...form, display_config: { ...form.display_config, headline: e.target.value } })} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                <button type="button" className="btn btn-secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Campaign</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Visitors Page
+    function VisitorsPage() {
+      const [visitors, setVisitors] = useState([]);
+      const [total, setTotal] = useState(0);
+
+      useEffect(() => {
+        loadVisitors();
+      }, []);
+
+      const loadVisitors = async () => {
+        const data = await API.get('/visitors?store_id=demo&limit=100');
+        setVisitors(data.visitors || []);
+        setTotal(data.total || 0);
+      };
+
+      const getStatusBadge = (status) => {
+        const colors = {
+          browsing: 'badge-draft',
+          abandoned: 'badge-draft',
+          recovered: 'badge-active',
+          converted: 'badge-active'
+        };
+        return colors[status] || 'badge-draft';
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Visitors</h1>
+            <span style={{ color: 'var(--text-secondary)' }}>{total} total visitors</span>
+          </div>
+
+          <div className="card">
+            {visitors.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">👥</div>
+                <h3>No visitors tracked yet</h3>
+                <p>Install the storefront widget to start tracking visitors.</p>
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Cart Value</th>
+                    <th>Status</th>
+                    <th>Captured</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visitors.map(v => (
+                    <tr key={v.id}>
+                      <td>{v.email || 'Anonymous'}</td>
+                      <td>${v.cart_value?.toFixed(2) || '0.00'}</td>
+                      <td><span className={`badge ${getStatusBadge(v.status)}`}>{v.status}</span></td>
+                      <td>{new Date(v.captured_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Analytics Page
+    function AnalyticsPage() {
+      const [funnel, setFunnel] = useState(null);
+
+      useEffect(() => {
+        loadAnalytics();
+      }, []);
+
+      const loadAnalytics = async () => {
+        const data = await API.get('/analytics/funnel?store_id=demo');
+        setFunnel(data.funnel);
+      };
+
+      if (!funnel) return <div>Loading...</div>;
+
+      const maxVal = Math.max(...Object.values(funnel));
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Analytics</h1>
+          </div>
+
+          <div className="card" style={{ marginBottom: 24 }}>
+            <h3 style={{ marginBottom: 24 }}>Recovery Funnel</h3>
+            <div className="funnel">
+              {Object.entries(funnel).map(([stage, value]) => {
+                const width = maxVal > 0 ? (value / maxVal) * 100 : 0;
+                const labels = {
+                  visited: 'Site Visitors',
+                  added_to_cart: 'Added to Cart',
+                  abandoned: 'Abandoned',
+                  recovered: 'Recovered',
+                  converted: 'Converted'
+                };
+                return (
+                  <div key={stage} className="funnel-stage">
+                    <div className="funnel-label">{labels[stage] || stage}</div>
+                    <div className="funnel-bar" style={{ width: `${Math.max(width, 5)}%` }}>
+                      {value}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Settings Page
+    function SettingsPage() {
+      const [settings, setSettings] = useState({
+        exit_intent_delay: 5000,
+        session_frequency: 'once',
+        offer_threshold: 50,
+        modal_style: 'slide'
+      });
+
+      const handleSave = () => {
+        alert('Settings saved!');
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Settings</h1>
+          </div>
+
+          <div className="card">
+            <div className="settings-section">
+              <h3>Exit Intent Detection</h3>
+              <div className="form-group">
+                <label className="form-label">Delay (ms)</label>
+                <input type="number" className="form-input" value={settings.exit_intent_delay} 
+                  onChange={e => setSettings({ ...settings, exit_intent_delay: parseInt(e.target.value) })} />
+                <small style={{ color: 'var(--text-muted)' }}>Wait this many ms before showing exit intent modal</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Session Frequency</label>
+                <select className="form-input" value={settings.session_frequency} 
+                  onChange={e => setSettings({ ...settings, session_frequency: e.target.value })}>
+                  <option value="once">Once per session</option>
+                  <option value="once_per_hour">Once per hour</option>
+                  <option value="always">Every time</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="settings-section">
+              <h3>Offer Triggers</h3>
+              <div className="form-group">
+                <label className="form-label">Minimum Cart Value ($)</label>
+                <input type="number" className="form-input" value={settings.offer_threshold} 
+                  onChange={e => setSettings({ ...settings, offer_threshold: parseFloat(e.target.value) })} />
+                <small style={{ color: 'var(--text-muted)' }}>Show offers when cart exceeds this value</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Modal Style</label>
+                <select className="form-input" value={settings.modal_style} 
+                  onChange={e => setSettings({ ...settings, modal_style: e.target.value })}>
+                  <option value="slide">Slide In</option>
+                  <option value="fade">Fade</option>
+                  <option value="pop">Pop</option>
+                </select>
+              </div>
+            </div>
+
+            <button className="btn btn-primary" onClick={handleSave}>Save Settings</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Billing Page
+    function BillingPage() {
+      const [plans] = useState({
+        starter: { name: 'Starter', price: 19, emails: 500, campaigns: 1, features: ['Basic Analytics', 'Email Support'] },
+        growth: { name: 'Growth', price: 49, emails: 'Unlimited', campaigns: 5, features: ['A/B Testing', 'Priority Support'] },
+        pro: { name: 'Pro', price: 99, emails: 'Unlimited', campaigns: 'Unlimited', features: ['SMS Recovery', 'Priority Support', 'Custom Integrations'] }
+      });
+      const [currentPlan, setCurrentPlan] = useState('starter');
+
+      const handleSelectPlan = async (plan) => {
+        await API.post('/billing/activate', { store_id: 'demo', plan });
+        setCurrentPlan(plan);
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Billing</h1>
+          </div>
+
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>
+            Choose the plan that fits your store's needs. Upgrade or downgrade at any time.
+          </p>
+
+          <div className="plan-cards">
+            {Object.entries(plans).map(([key, plan]) => (
+              <div key={key} className={`plan-card ${key === 'growth' ? 'featured' : ''}`}>
+                {key === 'growth' && (
+                  <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', 
+                    background: 'var(--accent-blue)', padding: '4px 12px', borderRadius: 12, fontSize: 12 }}>
+                    Most Popular
+                  </div>
+                )}
+                <div className="plan-name">{plan.name}</div>
+                <div className="plan-price">${plan.price}<span>/mo</span></div>
+                <ul className="plan-features">
+                  <li>{plan.emails} emails/mo</li>
+                  <li>{plan.campaigns} campaigns</li>
+                  {plan.features.map((f, i) => <li key={i}>{f}</li>)}
+                </ul>
+                <button 
+                  className={`btn ${currentPlan === key ? 'btn-secondary' : 'btn-primary'}`}
+                  onClick={() => handleSelectPlan(key)}
+                  disabled={currentPlan === key}
+                >
+                  {currentPlan === key ? 'Current Plan' : 'Select Plan'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Main App
+    function App() {
+      const [activePage, setActivePage] = useState('dashboard');
+      const [store] = useState({ id: 'demo', shop: 'demo.myshopify.com' });
+
+      const renderPage = () => {
+        switch (activePage) {
+          case 'dashboard': return <DashboardPage />;
+          case 'campaigns': return <CampaignsPage />;
+          case 'visitors': return <VisitorsPage />;
+          case 'analytics': return <AnalyticsPage />;
+          case 'settings': return <SettingsPage />;
+          case 'billing': return <BillingPage />;
+          default: return <DashboardPage />;
+        }
+      };
+
+      return (
+        <>
+          <Sidebar activePage={activePage} setActivePage={setActivePage} store={store} />
+          <main className="main-content">
+            {renderPage()}
+          </main>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

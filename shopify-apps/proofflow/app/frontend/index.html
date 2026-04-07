@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProofFlow — Social Proof & Reviews</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%235C6AC4' width='100' height='100' rx='20'/><text x='50%' y='55%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='50' font-family='system-ui'>PF</text></svg>">
+  <link rel="stylesheet" href="https://unpkg.com/@shopify/polaris@12/polaris.min.css">
+  <script src="https://unpkg.com/@shopify/polaris@12/polaris.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #F6F6F7; }
+    .app-frame { display: flex; height: 100vh; }
+    .nav-area { width: 240px; flex-shrink: 0; background: #1A1A2E; color: white; overflow-y: auto; display: flex; flex-direction: column; }
+    .main-area { flex: 1; overflow-y: auto; padding: 20px; }
+    .logo { padding: 20px; font-size: 20px; font-weight: 700; color: #5C6AC4; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
+    .logo-icon { width: 32px; height: 32px; background: #5C6AC4; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; }
+    .nav-section { padding: 16px 0; }
+    .nav-section-title { padding: 8px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.5); }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: rgba(255,255,255,0.7); text-decoration: none; cursor: pointer; transition: all 0.15s ease; border-left: 3px solid transparent; }
+    .nav-item:hover { background: rgba(255,255,255,0.05); color: white; }
+    .nav-item.active { background: rgba(92, 106, 196, 0.2); color: #5C6AC4; border-left-color: #5C6AC4; }
+    .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .page-header { margin-bottom: 24px; }
+    .page-title { font-size: 28px; font-weight: 600; color: #202223; margin-bottom: 4px; }
+    .page-subtitle { color: #6D7175; font-size: 14px; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .stat-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .stat-card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+    .stat-card-icon.purple { background: rgba(92, 106, 196, 0.1); color: #5C6AC4; }
+    .stat-card-icon.green { background: rgba(0, 128, 96, 0.1); color: #008060; }
+    .stat-card-icon.orange { background: rgba(244, 147, 66, 0.1); color: #F49342; }
+    .stat-card-icon.red { background: rgba(220, 69, 69, 0.1); color: #DC4545; }
+    .stat-card-value { font-size: 32px; font-weight: 700; color: #202223; margin-bottom: 4px; }
+    .stat-card-label { font-size: 13px; color: #6D7175; }
+    .stat-card-trend { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
+    .stat-card-trend.up { background: rgba(0, 128, 96, 0.1); color: #008060; }
+    .stat-card-trend.down { background: rgba(244, 66, 66, 0.1); color: #DC4545; }
+    .stat-card-trend.neutral { background: rgba(109, 113, 117, 0.1); color: #6D7175; }
+    .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding: 10px 0; }
+    .bar-chart-bar { flex: 1; background: linear-gradient(to top, #5C6AC4, #8A94C7); border-radius: 4px 4px 0 0; min-width: 8px; transition: all 0.2s; cursor: pointer; position: relative; }
+    .bar-chart-bar:hover { background: linear-gradient(to top, #4A5AB4, #7A84B7); }
+    .chart-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .chart-title { font-size: 16px; font-weight: 600; color: #202223; }
+    .table-container { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+    .table-header { padding: 16px 20px; border-bottom: 1px solid #E4E4E7; display: flex; justify-content: space-between; align-items: center; }
+    .table-title { font-size: 16px; font-weight: 600; color: #202223; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #6D7175; text-transform: uppercase; letter-spacing: 0.5px; background: #F6F6F7; border-bottom: 1px solid #E4E4E7; }
+    td { padding: 14px 16px; font-size: 14px; color: #202223; border-bottom: 1px solid #E4E4E7; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: #F6F6F7; }
+    .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .badge.active { background: rgba(0, 128, 96, 0.1); color: #008060; }
+    .badge.draft { background: rgba(109, 113, 117, 0.1); color: #6D7175; }
+    .badge.verified { background: rgba(92, 106, 196, 0.1); color: #5C6AC4; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s ease; text-decoration: none; }
+    .btn-primary { background: #5C6AC4; color: white; }
+    .btn-primary:hover { background: #4A5AB4; }
+    .btn-secondary { background: white; color: #202223; border: 1px solid #E4E4E7; }
+    .btn-secondary:hover { background: #F6F6F7; }
+    .btn-success { background: #008060; color: white; }
+    .btn-success:hover { background: #006B50; }
+    .btn-danger { background: white; color: #DC4545; border: 1px solid #DC4545; }
+    .btn-danger:hover { background: #FFF5F5; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-icon { padding: 8px; border-radius: 8px; background: transparent; border: none; cursor: pointer; color: #6D7175; transition: all 0.15s; }
+    .btn-icon:hover { background: #F6F6F7; color: #202223; }
+    .form-section { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    .form-section-title { font-size: 16px; font-weight: 600; color: #202223; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #E4E4E7; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 14px; font-weight: 500; color: #202223; margin-bottom: 6px; }
+    .form-input { width: 100%; padding: 10px 14px; border: 1px solid #E4E4E7; border-radius: 8px; font-size: 14px; transition: all 0.15s; }
+    .form-input:focus { outline: none; border-color: #5C6AC4; box-shadow: 0 0 0 3px rgba(92, 106, 196, 0.1); }
+    .form-textarea { width: 100%; padding: 10px 14px; border: 1px solid #E4E4E7; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 80px; }
+    .form-textarea:focus { outline: none; border-color: #5C6AC4; box-shadow: 0 0 0 3px rgba(92, 106, 196, 0.1); }
+    .toggle-container { display: flex; align-items: center; gap: 12px; }
+    .toggle { position: relative; width: 44px; height: 24px; background: #E4E4E7; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
+    .toggle.active { background: #008060; }
+    .toggle-knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .toggle.active .toggle-knob { transform: translateX(20px); }
+    .form-actions { display: flex; gap: 12px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid #E4E4E7; margin-top: 20px; }
+    .nav-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+    .nav-footer-info { font-size: 12px; color: rgba(255,255,255,0.5); }
+    .nav-footer-plan { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: rgba(92, 106, 196, 0.2); color: #8A94C7; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 8px; }
+    .empty-state { text-align: center; padding: 60px 20px; color: #6D7175; }
+    .empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state-title { font-size: 18px; font-weight: 600; color: #202223; margin-bottom: 8px; }
+    .star-rating { display: inline-flex; gap: 2px; color: #F49342; }
+    .review-card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .review-author { font-weight: 600; color: #202223; }
+    .review-date { font-size: 12px; color: #6D7175; }
+    .review-body { color: #202223; line-height: 1.6; margin-bottom: 12px; }
+    .review-photos { display: flex; gap: 8px; margin-bottom: 12px; }
+    .review-photo { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; }
+    .review-actions { display: flex; gap: 12px; }
+    .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filter-select { padding: 8px 12px; border: 1px solid #E4E4E7; border-radius: 8px; font-size: 14px; background: white; }
+    .search-input { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #E4E4E7; border-radius: 8px; font-size: 14px; }
+    .billing-card { background: white; border-radius: 16px; padding: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; border: 2px solid transparent; transition: all 0.2s; }
+    .billing-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+    .billing-card.featured { border-color: #5C6AC4; }
+    .billing-plan-name { font-size: 20px; font-weight: 700; color: #202223; margin-bottom: 8px; }
+    .billing-plan-price { font-size: 40px; font-weight: 700; color: #5C6AC4; }
+    .billing-plan-price span { font-size: 16px; font-weight: 400; color: #6D7175; }
+    .billing-plan-features { list-style: none; padding: 20px 0; margin: 20px 0; border-top: 1px solid #E4E4E7; border-bottom: 1px solid #E4E4E7; }
+    .billing-plan-features li { padding: 8px 0; font-size: 14px; color: #202223; }
+    .billing-current { display: inline-block; padding: 4px 12px; background: rgba(0, 128, 96, 0.1); color: #008060; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+    .billing-plans-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 24px 0; }
+    @media (max-width: 900px) { .billing-plans-grid { grid-template-columns: 1fr; } }
+    .rating-distribution { display: flex; flex-direction: column; gap: 8px; }
+    .rating-row { display: flex; align-items: center; gap: 12px; }
+    .rating-label { width: 50px; font-size: 13px; color: #6D7175; display: flex; align-items: center; gap: 4px; }
+    .rating-bar-bg { flex: 1; height: 8px; background: #F6F6F7; border-radius: 4px; overflow: hidden; }
+    .rating-bar-fill { height: 100%; background: #F49342; border-radius: 4px; transition: width 0.3s; }
+    .rating-count { width: 40px; font-size: 13px; color: #6D7175; text-align: right; }
+    .product-item { display: flex; align-items: center; gap: 16px; padding: 16px; border-bottom: 1px solid #E4E4E7; }
+    .product-item:last-child { border-bottom: none; }
+    .product-image { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: #F6F6F7; }
+    .product-info { flex: 1; }
+    .product-name { font-weight: 500; color: #202223; margin-bottom: 4px; }
+    .product-stats { font-size: 13px; color: #6D7175; }
+    .settings-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #E4E4E7; }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-label { font-weight: 500; color: #202223; }
+    .settings-desc { font-size: 13px; color: #6D7175; margin-top: 2px; }
+    .email-preview { background: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 8px; padding: 20px; margin-top: 16px; }
+    .email-preview-header { border-bottom: 1px solid #E4E4E7; padding-bottom: 12px; margin-bottom: 12px; }
+    .email-preview-subject { font-weight: 600; color: #202223; }
+    .email-preview-body { color: #202223; line-height: 1.6; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect } = React;
+
+    const DashboardIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+    );
+
+    const ReviewsIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+      </svg>
+    );
+
+    const ProductsIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+        <line x1="7" y1="7" x2="7.01" y2="7"/>
+      </svg>
+    );
+
+    const AnalyticsIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M18 20V10"/>
+        <path d="M12 20V4"/>
+        <path d="M6 20v-6"/>
+      </svg>
+    );
+
+    const SettingsIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+    );
+
+    const BillingIcon = () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+        <line x1="1" y1="10" x2="23" y2="10"/>
+      </svg>
+    );
+
+    const StarIcon = ({ filled = true, size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "#F49342" : "none"} stroke="#F49342" strokeWidth="2">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    );
+
+    const CheckIcon = () => (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    );
+
+    function Dashboard({ navigateTo }) {
+      const [stats, setStats] = useState({ totalReviews: 0, averageRating: 0, thisMonth: 0, monthOverMonth: 0 });
+      const [recentReviews, setRecentReviews] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch('/api/reviews/stats')
+          .then(r => r.json())
+          .then(data => {
+            if (data.stats) setStats(data.stats);
+          });
+        fetch('/api/reviews?limit=5')
+          .then(r => r.json())
+          .then(data => {
+            if (data.reviews) setRecentReviews(data.reviews);
+            setLoading(false);
+          });
+      }, []);
+
+      const StarRating = ({ rating }) => (
+        <div className="star-rating">
+          {[1,2,3,4,5].map(i => <StarIcon key={i} filled={i <= rating} />)}
+        </div>
+      );
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Dashboard</h1>
+            <p className="page-subtitle">Welcome back! Here's how your reviews are performing.</p>
+          </div>
+
+          <div className="card-grid">
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon purple">
+                  <ReviewsIcon />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.totalReviews}</div>
+              <div className="stat-card-label">Total Reviews</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon orange">
+                  <StarIcon size={24} />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '-'}</div>
+              <div className="stat-card-label">Average Rating</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon green">
+                  <CheckIcon />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.thisMonth}</div>
+              <div className="stat-card-label">Reviews This Month</div>
+              <span className={`stat-card-trend ${stats.monthOverMonth >= 0 ? 'up' : 'down'}`}>
+                {stats.monthOverMonth >= 0 ? '+' : ''}{stats.monthOverMonth}% from last month
+              </span>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon red">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20V10"/>
+                    <path d="M18 20V4"/>
+                    <path d="M6 20v-4"/>
+                  </svg>
+                </div>
+              </div>
+              <div className="stat-card-value">-</div>
+              <div className="stat-card-label">Conversion Lift</div>
+            </div>
+          </div>
+
+          <div className="table-container">
+            <div className="table-header">
+              <div className="table-title">Recent Reviews</div>
+              <button className="btn btn-sm btn-secondary" onClick={() => navigateTo('reviews')}>View All</button>
+            </div>
+            {loading ? (
+              <div className="empty-state">Loading...</div>
+            ) : recentReviews.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-title">No reviews yet</div>
+                <p>Start collecting reviews by enabling review requests in Settings.</p>
+              </div>
+            ) : (
+              recentReviews.map(review => (
+                <div key={review.id} className="review-card" style={{ boxShadow: 'none', borderRadius: 0, borderBottom: '1px solid #E4E4E7' }}>
+                  <div className="review-header">
+                    <div>
+                      <div className="review-author">{review.author_name}</div>
+                      <div className="review-date">{new Date(review.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <StarRating rating={review.rating} />
+                  </div>
+                  {review.title && <strong>{review.title}</strong>}
+                  <p className="review-body">{review.body}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function Reviews({ navigateTo }) {
+      const [reviews, setReviews] = useState([]);
+      const [stats, setStats] = useState({ distribution: {1:0,2:0,3:0,4:0,5:0} });
+      const [filter, setFilter] = useState({ rating: '', product: '' });
+      const [loading, setLoading] = useState(true);
+
+      const loadReviews = () => {
+        let url = '/api/reviews?limit=50';
+        if (filter.rating) url += `&rating=${filter.rating}`;
+        if (filter.product) url += `&product_id=${filter.product}`;
+        fetch(url)
+          .then(r => r.json())
+          .then(data => {
+            setReviews(data.reviews || []);
+            if (data.stats) setStats(data.stats);
+            setLoading(false);
+          });
+      };
+
+      useEffect(() => { loadReviews(); }, [filter]);
+
+      const StarRating = ({ rating, small = false }) => (
+        <div className="star-rating">
+          {[1,2,3,4,5].map(i => <StarIcon key={i} filled={i <= rating} size={small ? 12 : 16} />)}
+        </div>
+      );
+
+      const handleReply = (reviewId) => {
+        const text = prompt('Enter your reply:');
+        if (text) {
+          fetch(`/api/reviews/${reviewId}/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reply_text: text })
+          }).then(() => loadReviews());
+        }
+      };
+
+      const handleDelete = (reviewId) => {
+        if (confirm('Delete this review?')) {
+          fetch(`/api/reviews/${reviewId}`, { method: 'DELETE' }).then(() => loadReviews());
+        }
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Reviews</h1>
+            <p className="page-subtitle">Manage your product reviews</p>
+          </div>
+
+          <div className="two-col-grid" style={{ marginBottom: 24 }}>
+            <div className="chart-container">
+              <div className="chart-header">
+                <div className="chart-title">Rating Distribution</div>
+              </div>
+              <div className="rating-distribution">
+                {[5,4,3,2,1].map(stars => (
+                  <div key={stars} className="rating-row">
+                    <div className="rating-label"><StarIcon size={12} /> {stars}</div>
+                    <div className="rating-bar-bg">
+                      <div className="rating-bar-fill" style={{ width: `${stats.total > 0 ? (stats.distribution[stars] / stats.total * 100) : 0}%` }}></div>
+                    </div>
+                    <div className="rating-count">{stats.distribution[stars] || 0}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon purple">
+                  <ReviewsIcon />
+                </div>
+              </div>
+              <div className="stat-card-value">{stats.total || 0}</div>
+              <div className="stat-card-label">Total Reviews</div>
+              <div style={{ marginTop: 16 }}>
+                <div className="stat-card-label">Average Rating</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <span style={{ fontSize: 24, fontWeight: 700, color: '#202223' }}>{stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '-'}</span>
+                  <StarRating rating={Math.round(stats.averageRating || 0)} />
+                </div>
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <div className="stat-card-label">Verified Purchases</div>
+                <span style={{ fontSize: 20, fontWeight: 600, color: '#008060' }}>{stats.verified || 0}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="filter-bar">
+            <select className="filter-select" value={filter.rating} onChange={e => setFilter({...filter, rating: e.target.value})}>
+              <option value="">All Ratings</option>
+              <option value="5">5 Stars</option>
+              <option value="4">4 Stars</option>
+              <option value="3">3 Stars</option>
+              <option value="2">2 Stars</option>
+              <option value="1">1 Star</option>
+            </select>
+          </div>
+
+          <div className="table-container">
+            {loading ? (
+              <div className="empty-state">Loading...</div>
+            ) : reviews.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-title">No reviews found</div>
+              </div>
+            ) : (
+              reviews.map(review => (
+                <div key={review.id} className="review-card" style={{ boxShadow: 'none', borderRadius: 0, borderBottom: '1px solid #E4E4E7' }}>
+                  <div className="review-header">
+                    <div>
+                      <div className="review-author">
+                        {review.author_name}
+                        {review.verified && <span className="badge verified" style={{ marginLeft: 8 }}>Verified</span>}
+                      </div>
+                      <div className="review-date">{new Date(review.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <StarRating rating={review.rating} />
+                  </div>
+                  {review.title && <strong>{review.title}</strong>}
+                  <p className="review-body">{review.body}</p>
+                  {review.reply_text && (
+                    <div style={{ background: '#F6F6F7', padding: 12, borderRadius: 8, marginTop: 12 }}>
+                      <strong>Merchant Reply:</strong> {review.reply_text}
+                    </div>
+                  )}
+                  <div className="review-actions" style={{ marginTop: 12 }}>
+                    {!review.reply_text && <button className="btn btn-sm btn-secondary" onClick={() => handleReply(review.id)}>Reply</button>}
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(review.id)}>Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function Products() {
+      const [products, setProducts] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch('/api/products')
+          .then(r => r.json())
+          .then(data => {
+            setProducts(data.products || []);
+            setLoading(false);
+          });
+      }, []);
+
+      const StarRating = ({ rating, small = false }) => (
+        <div className="star-rating">
+          {[1,2,3,4,5].map(i => <StarIcon key={i} filled={i <= rating} size={small ? 12 : 16} />)}
+        </div>
+      );
+
+      const Toggle = ({ active, onChange }) => (
+        <div className={`toggle ${active ? 'active' : ''}`} onClick={onChange}>
+          <div className="toggle-knob"></div>
+        </div>
+      );
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Products</h1>
+            <p className="page-subtitle">Manage review settings per product</p>
+          </div>
+
+          <div className="table-container">
+            {loading ? (
+              <div className="empty-state">Loading...</div>
+            ) : products.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-title">No products found</div>
+              </div>
+            ) : (
+              products.map(product => (
+                <div key={product.id} className="product-item">
+                  <img src={product.image || 'https://via.placeholder.com/60'} alt={product.title} className="product-image" />
+                  <div className="product-info">
+                    <div className="product-name">{product.title}</div>
+                    <div className="product-stats">
+                      {product.stats.reviewCount > 0 ? (
+                        <span>★ {product.stats.avgRating} ({product.stats.reviewCount} reviews)</span>
+                      ) : (
+                        <span>No reviews yet</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#6D7175' }}>Reviews</div>
+                      <Toggle 
+                        active={product.stats.reviewsEnabled !== false} 
+                        onChange={() => {}} 
+                      />
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#6D7175' }}>Widgets</div>
+                      <Toggle 
+                        active={product.stats.widgetsEnabled !== false} 
+                        onChange={() => {}} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function Analytics() {
+      const [analytics, setAnalytics] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch('/api/analytics')
+          .then(r => r.json())
+          .then(data => {
+            setAnalytics(data.analytics);
+            setLoading(false);
+          });
+      }, []);
+
+      if (loading) return <div className="empty-state">Loading...</div>;
+
+      const { overview, distribution, monthlyTrends = [], topProducts = [] } = analytics || {};
+      const total = overview?.totalReviews || 0;
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Analytics</h1>
+            <p className="page-subtitle">Review performance insights</p>
+          </div>
+
+          <div className="card-grid">
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon purple">
+                  <ReviewsIcon />
+                </div>
+              </div>
+              <div className="stat-card-value">{overview?.totalReviews || 0}</div>
+              <div className="stat-card-label">Total Reviews</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon orange">
+                  <StarIcon size={24} />
+                </div>
+              </div>
+              <div className="stat-card-value">{overview?.averageRating > 0 ? overview.averageRating.toFixed(1) : '-'}</div>
+              <div className="stat-card-label">Average Rating</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon green">
+                  <CheckIcon />
+                </div>
+              </div>
+              <div className="stat-card-value">{overview?.verifiedReviews || 0}</div>
+              <div className="stat-card-label">Verified Reviews</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-header">
+                <div className="stat-card-icon red">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+                  </svg>
+                </div>
+              </div>
+              <div className="stat-card-value">{overview?.totalHelpful || 0}</div>
+              <div className="stat-card-label">Helpful Votes</div>
+            </div>
+          </div>
+
+          <div className="two-col-grid">
+            <div className="chart-container">
+              <div className="chart-header">
+                <div className="chart-title">Rating Distribution</div>
+              </div>
+              <div className="rating-distribution">
+                {[5,4,3,2,1].map(stars => (
+                  <div key={stars} className="rating-row">
+                    <div className="rating-label"><StarIcon size={12} /> {stars}</div>
+                    <div className="rating-bar-bg">
+                      <div className="rating-bar-fill" style={{ width: `${total > 0 ? ((distribution?.[stars] || 0) / total * 100) : 0}%` }}></div>
+                    </div>
+                    <div className="rating-count">{distribution?.[stars] || 0}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="chart-container">
+              <div className="chart-header">
+                <div className="chart-title">Top Products</div>
+              </div>
+              {topProducts.length === 0 ? (
+                <div className="empty-state">No data yet</div>
+              ) : (
+                topProducts.slice(0, 5).map((product, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #E4E4E7' }}>
+                    <span>Product #{product.productId}</span>
+                    <span>{product.reviewCount} reviews (★ {product.avgRating})</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Settings() {
+      const [settings, setSettings] = useState({
+        email_subject: '',
+        email_body: '',
+        email_delay_days: 7,
+        auto_requests_enabled: true,
+        notification_style: 'popup',
+        notification_position: 'bottom-left',
+        notification_timeout: 5000
+      });
+      const [preview, setPreview] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+
+      useEffect(() => {
+        fetch('/api/settings')
+          .then(r => r.json())
+          .then(data => {
+            if (data.settings) setSettings(data.settings);
+            setLoading(false);
+          });
+      }, []);
+
+      const handleSave = () => {
+        setSaving(true);
+        fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        }).then(() => {
+          setSaving(false);
+          alert('Settings saved!');
+        });
+      };
+
+      const handlePreview = () => {
+        fetch('/api/settings/preview-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject: settings.email_subject, body: settings.email_body })
+        }).then(r => r.json()).then(data => setPreview(data.preview));
+      };
+
+      if (loading) return <div className="empty-state">Loading...</div>;
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Settings</h1>
+            <p className="page-subtitle">Configure review requests and notifications</p>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">Email Review Requests</div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Email Subject</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={settings.email_subject}
+                  onChange={e => setSettings({...settings, email_subject: e.target.value})}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Send After (days)</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={settings.email_delay_days}
+                  onChange={e => setSettings({...settings, email_delay_days: parseInt(e.target.value)})}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email Body</label>
+              <textarea 
+                className="form-textarea" 
+                rows={8}
+                value={settings.email_body}
+                onChange={e => setSettings({...settings, email_body: e.target.value})}
+              />
+              <p style={{ fontSize: 12, color: '#6D7175', marginTop: 4 }}>
+                Available placeholders: {'{{customer_name}}'}, {'{{product_name}}'}, {'{{order_number}}'}, {'{{review_link}}'}
+              </p>
+            </div>
+            <div className="form-group">
+              <button className="btn btn-secondary" onClick={handlePreview}>Preview Email</button>
+            </div>
+            {preview && (
+              <div className="email-preview">
+                <div className="email-preview-header">
+                  <div className="email-preview-subject">{preview.subject}</div>
+                </div>
+                <div className="email-preview-body">{preview.body}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">Auto Review Requests</div>
+            <div className="settings-row">
+              <div>
+                <div className="settings-label">Enable Automatic Requests</div>
+                <div className="settings-desc">Automatically send review requests after purchase</div>
+              </div>
+              <div className={`toggle ${settings.auto_requests_enabled ? 'active' : ''}`} onClick={() => setSettings({...settings, auto_requests_enabled: !settings.auto_requests_enabled})}>
+                <div className="toggle-knob"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">Notification Style</div>
+            <div className="form-group">
+              <label className="form-label">Style</label>
+              <select className="form-input" value={settings.notification_style} onChange={e => setSettings({...settings, notification_style: e.target.value})}>
+                <option value="popup">Popup</option>
+                <option value="banner">Banner</option>
+                <option value="toast">Toast</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Position</label>
+              <select className="form-input" value={settings.notification_position} onChange={e => setSettings({...settings, notification_position: e.target.value})}>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="top-left">Top Left</option>
+                <option value="top-right">Top Right</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function Billing() {
+      const [currentPlan, setCurrentPlan] = useState('starter');
+      const [activating, setActivating] = useState(null);
+
+      useEffect(() => {
+        fetch('/api/billing/current')
+          .then(r => r.json())
+          .then(data => {
+            if (data.currentPlan) setCurrentPlan(data.currentPlan);
+          });
+      }, []);
+
+      const plans = {
+        starter: { name: 'Starter', price: 19, features: ['100 reviews/month', 'Basic social proof widgets', 'Email review requests', 'Standard analytics'] },
+        growth: { name: 'Growth', price: 49, features: ['Unlimited reviews', 'All widget types', 'A/B test subject lines', 'Advanced analytics', 'Priority support'] },
+        pro: { name: 'Pro', price: 99, features: ['Everything in Growth', 'Photo reviews', 'UGC gallery', 'AI-powered review responses', 'Custom branding', 'Dedicated support'] }
+      };
+
+      const handleActivate = (plan) => {
+        if (!confirm(`Activate ${plans[plan].name} plan at $${plans[plan].price}/month?`)) return;
+        setActivating(plan);
+        fetch('/api/billing/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan })
+        }).then(r => r.json()).then(() => {
+          setCurrentPlan(plan);
+          setActivating(null);
+        });
+      };
+
+      return (
+        <div>
+          <div className="page-header">
+            <h1 className="page-title">Billing</h1>
+            <p className="page-subtitle">Manage your subscription</p>
+          </div>
+
+          <div className="billing-plans-grid">
+            {Object.entries(plans).map(([key, plan]) => (
+              <div key={key} className={`billing-card ${key === 'growth' ? 'featured' : ''}`}>
+                {currentPlan === key && <div className="billing-current">Current Plan</div>}
+                <div className="billing-plan-name">{plan.name}</div>
+                <div className="billing-plan-price">${plan.price}<span>/mo</span></div>
+                <ul className="billing-plan-features">
+                  {plan.features.map((f, i) => <li key={i}>{f}</li>)}
+                </ul>
+                {currentPlan !== key && (
+                  <button className="btn btn-primary" onClick={() => handleActivate(key)} disabled={activating === key}>
+                    {activating === key ? 'Activating...' : `Activate ${plan.name}`}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [currentPage, setCurrentPage] = useState('dashboard');
+
+      const navItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+        { id: 'reviews', label: 'Reviews', icon: <ReviewsIcon /> },
+        { id: 'products', label: 'Products', icon: <ProductsIcon /> },
+        { id: 'analytics', label: 'Analytics', icon: <AnalyticsIcon /> },
+        { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
+        { id: 'billing', label: 'Billing', icon: <BillingIcon /> }
+      ];
+
+      const renderPage = () => {
+        switch (currentPage) {
+          case 'dashboard': return <Dashboard navigateTo={setCurrentPage} />;
+          case 'reviews': return <Reviews />;
+          case 'products': return <Products />;
+          case 'analytics': return <Analytics />;
+          case 'settings': return <Settings />;
+          case 'billing': return <Billing />;
+          default: return <Dashboard navigateTo={setCurrentPage} />;
+        }
+      };
+
+      return (
+        <div className="app-frame">
+          <nav className="nav-area">
+            <div className="logo">
+              <div className="logo-icon">PF</div>
+              ProofFlow
+            </div>
+            <div className="nav-section">
+              <div className="nav-section-title">Main</div>
+              {navItems.slice(0, 4).map(item => (
+                <div
+                  key={item.id}
+                  className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(item.id)}
+                >
+                  {item.icon}
+                  {item.label}
+                </div>
+              ))}
+            </div>
+            <div className="nav-section">
+              <div className="nav-section-title">Configuration</div>
+              {navItems.slice(4).map(item => (
+                <div
+                  key={item.id}
+                  className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(item.id)}
+                >
+                  {item.icon}
+                  {item.label}
+                </div>
+              ))}
+            </div>
+            <div className="nav-footer">
+              <div className="nav-footer-info">my-shop.myshopify.com</div>
+              <div className="nav-footer-plan">⭐ Starter Plan</div>
+            </div>
+          </nav>
+          <main className="main-area">
+            {renderPage()}
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

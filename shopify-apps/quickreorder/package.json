@@ -1,0 +1,20 @@
+{
+  "name": "quickreorder",
+  "version": "1.0.0",
+  "description": "Shopify subscription & recurring orders app",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "dependencies": {
+    "@shopify/shopify-api": "^11.0.0",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

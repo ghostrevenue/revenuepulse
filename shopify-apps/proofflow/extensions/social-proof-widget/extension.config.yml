@@ -1,0 +1,24 @@
+name: social-proof-widget
+version: 1.0.0
+description: Social proof widgets for ProofFlow
+
+type: checkout_post_purchase
+
+app_embedding:
+  - name: Social Proof Embed
+    file: src/index.js
+    target: checkout_post_purchase
+
+configuration:
+  - name: show_star_rating
+    type: boolean
+    default: true
+  - name: show_review_count
+    type: boolean
+    default: true
+  - name: show_live_counter
+    type: boolean
+    default: true
+  - name: show_purchase_popup
+    type: boolean
+    default: true

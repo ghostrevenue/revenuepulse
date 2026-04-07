@@ -1,0 +1,6 @@
+name: fb-pixel
+version: 1.0.0
+type: extension
+main: src/index.js
+
+runtime: "client"
