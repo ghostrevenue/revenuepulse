@@ -1,9 +1,17 @@
 const API_BASE = window.location.origin;
 
+function getShopHeader() {
+  const params = new URLSearchParams(window.location.search);
+  const shop = params.get('shop');
+  return shop ? { 'X-Shopify-Shop-Domain': shop } : {};
+}
+
 async function apiFetch(path, options = {}) {
+  const shopHeader = getShopHeader();
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...shopHeader,
       ...options.headers
     },
     ...options
@@ -17,10 +25,10 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   // Auth
-  verifySession: (sessionToken) => apiFetch('/api/auth/session/verify', {
+  verifySession: () => apiFetch('/api/auth/session/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionToken })
+    body: JSON.stringify({ sessionToken: null })
   }),
 
   // Revenue

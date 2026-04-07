@@ -27,7 +27,15 @@ router.post('/session/verify', async (req, res) => {
   const sessionToken = req.body?.sessionToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
   if (!sessionToken && !shopDomain) {
-    return res.status(401).json({ error: 'No session token or shop domain provided' });
+    // Also accept shop from URL query params
+    const shopFromQuery = req.query.shop;
+    if (!shopFromQuery) {
+      return res.status(401).json({ error: 'No session token or shop domain provided' });
+    }
+    await db.ensureReady();
+    const store = await StoreModel.findByShop(shopFromQuery);
+    if (!store) return res.status(401).json({ error: 'Store not found' });
+    return res.json({ store: { id: store.id, shop: store.shop } });
   }
 
   if (shopDomain) {
