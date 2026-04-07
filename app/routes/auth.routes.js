@@ -33,6 +33,37 @@ router.post('/session/verify', async (req, res) => {
   const shopDomain = req.headers['x-shopify-shop-domain'];
   const sessionToken = req.body?.sessionToken || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
+  // ── Partners Dashboard OAuth install flow ──────────────────────────────────
+  // When a merchant clicks "Install" in the Partners Dashboard, Shopify redirects
+  // to the app root with ?hmac=...&host=...&shop=...&timestamp=... The frontend
+  // extracts these from the URL and POSTs them here. We verify HMAC and provision
+  // the store if it's new.
+  const { hmac, host, shop: shopFromOAuth, timestamp } = req.body || {};
+  if (hmac && shopFromOAuth) {
+    const apiSecret = process.env.SHOPIFY_API_SECRET;
+    if (apiSecret) {
+      try {
+        const paramsForHmac = { ...req.body };
+        delete paramsForHmac.hmac; // HMAC itself is not part of the signed message
+        const verified = verifyShopifyHmac(paramsForHmac, apiSecret);
+        if (!verified) {
+          return res.status(401).json({ error: 'HMAC verification failed' });
+        }
+      } catch (e) {
+        return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
+      }
+    }
+    await db.ensureReady();
+    let store = await StoreModel.findByShop(shopFromOAuth);
+    if (!store) {
+      const id = uuidv4();
+      await StoreModel.create({ id, shop: shopFromOAuth, accessToken: null, scope: 'read_orders,read_products,read_analytics' });
+      store = { id, shop: shopFromOAuth };
+    }
+    return res.json({ store: { id: store.id, shop: store.shop } });
+  }
+  // ── End Partners Dashboard flow ─────────────────────────────────────────────
+
   if (!sessionToken && !shopDomain) {
     // Also accept shop from URL query params
     const shopFromQuery = req.query.shop;

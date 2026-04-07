@@ -2,7 +2,10 @@ name = "RevenuePulse"
 client_id = "241e0c22c806c22aea6a9f3957f29484"
 
 application_url = "https://revenuepulse-production.up.railway.app"
-embedded = true
+embedded = false
+
+[access_scopes]
+scopes = "read_orders, read_products, read_analytics"
 
 [app_proxy]
 url = "https://revenuepulse-production.up.railway.app"

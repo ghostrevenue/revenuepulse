@@ -6,6 +6,20 @@ function getShopHeader() {
   return shop ? { 'X-Shopify-Shop-Domain': shop } : {};
 }
 
+// Extract OAuth params from URL when merchant installs via Partners Dashboard
+// Shopify sends: ?hmac=...&host=...&shop=...&timestamp=...
+function getOAuthParams() {
+  const params = new URLSearchParams(window.location.search);
+  const hmac = params.get('hmac');
+  const host = params.get('host');
+  const shop = params.get('shop');
+  const timestamp = params.get('timestamp');
+  if (hmac && shop) {
+    return { hmac, host, shop, timestamp };
+  }
+  return null;
+}
+
 async function apiFetch(path, options = {}) {
   const shopHeader = getShopHeader();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -25,11 +39,20 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   // Auth
-  verifySession: () => apiFetch('/api/auth/session/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionToken: null })
-  }),
+  // For Partners Dashboard install flow: pass OAuth params from URL so backend
+  // can verify HMAC and complete OAuth token exchange. For session token flow
+  // (embedded), pass sessionToken in body.
+  verifySession: () => {
+    const oAuthParams = getOAuthParams();
+    const body = oAuthParams
+      ? JSON.stringify(oAuthParams)           // Partners Dashboard install
+      : JSON.stringify({ sessionToken: null }); // Embedded/session token
+    return apiFetch('/api/auth/session/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+  },
 
   // Revenue
   getSummary: (days = 30) => apiFetch(`/api/revenue/summary?days=${days}`),
