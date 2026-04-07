@@ -207,9 +207,11 @@ router.get('/callback', async (req, res) => {
     let accessToken = code;
 
     // Exchange code for real access token via Shopify OAuth API
-    if (code && !state) {
+    // Partners Dashboard always sends state (CSRF UUID), so !state = false → always hits real exchange
+    if (code) {
       // state=false means this is not a mock — do real token exchange
       const apiKey = process.env.SHOPIFY_API_KEY;
+      const apiSecret = process.env.SHOPIFY_API_SECRET;
       try {
         const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
           method: 'POST',
@@ -231,7 +233,7 @@ router.get('/callback', async (req, res) => {
         console.error('[/api/auth/callback] token exchange error:', e.message);
       }
     } else {
-      console.log('[/api/auth/callback] using code as mock token (state present or no code)');
+      console.log('[/api/auth/callback] using code as mock token (no code)');
     }
 
     let store = await StoreModel.findByShop(shop);
