@@ -37,6 +37,7 @@ app.use('/webhooks', webhooksRoutes);
 // Shopify redirects here with client_id, scope, redirect_uri, state, hmac, timestamp, shop
 // We verify the request and redirect to Shopify's real authorize URL
 app.get('/admin/oauth/authorize', (req, res) => {
+  console.log('[/admin/oauth/authorize] query:', JSON.stringify(req.query));
   const { shop, client_id, scope, redirect_uri, state, hmac, timestamp } = req.query;
 
   if (!shop) {
@@ -76,9 +77,25 @@ app.get('/api/app-bridge-config', (req, res) => {
   res.json(config);
 });
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
+// ─── Root — MUST handle OAuth redirect params when present ────────────────────
+// When embedded=false, Shopify calls the app root with OAuth params
+// (hmac, host, shop, timestamp) as a fallback after authorization.
+// If a 'code' is present, redirect to callback to complete token exchange.
 app.get('/', (req, res) => {
-  // Serve React app for embedded Shopify app
+  console.log('[ROOT /] query:', JSON.stringify(req.query));
+  const { code, hmac, host, shop, timestamp } = req.query;
+
+  // If code param is present, redirect to callback to complete OAuth
+  if (code) {
+    console.log('[ROOT /] OAuth code detected — redirecting to /api/auth/callback');
+    return res.redirect(`/api/auth/callback?${new URLSearchParams(req.query).toString()}`);
+  }
+
+  // OAuth params present but no code — log for diagnosis then serve app
+  if (hmac || host || shop) {
+    console.log('[ROOT /] OAuth params present but NO code — shop:', shop, 'host:', host);
+  }
+
   res.sendFile(path.join(__dirname, 'app/frontend', 'index.html'));
 });
 

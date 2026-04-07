@@ -98,6 +98,7 @@ router.post('/session/verify', async (req, res) => {
 // OAuth callback — Shopify redirects here after merchant authorizes
 router.get('/callback', async (req, res) => {
   try {
+    console.log('[/api/auth/callback] query:', JSON.stringify(req.query));
     const { shop, code, state, hmac, timestamp } = req.query;
 
     if (!shop) return res.status(400).json({ error: 'Shop required' });
@@ -123,19 +124,51 @@ router.get('/callback', async (req, res) => {
 
     await db.ensureReady();
 
-    // In production: exchange code for access token via Shopify OAuth API
-    // For now: auto-create or update store with code as token
+    let accessToken = code;
+
+    // Exchange code for real access token via Shopify OAuth API
+    if (code && !state) {
+      // state=false means this is not a mock — do real token exchange
+      const apiKey = process.env.SHOPIFY_API_KEY;
+      try {
+        const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: apiKey,
+            client_secret: apiSecret,
+            code
+          })
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.access_token) {
+          accessToken = tokenData.access_token;
+          console.log('[/api/auth/callback] REAL access token acquired for', shop);
+        } else {
+          console.error('[/api/auth/callback] token exchange failed:', tokenData);
+        }
+      } catch (e) {
+        console.error('[/api/auth/callback] token exchange error:', e.message);
+      }
+    } else {
+      console.log('[/api/auth/callback] using code as mock token (state present or no code)');
+    }
+
     let store = await StoreModel.findByShop(shop);
     if (!store) {
       const id = uuidv4();
-      await StoreModel.create({ id, shop, accessToken: code || uuidv4(), scope: 'read_orders,read_products' });
+      await StoreModel.create({ id, shop, accessToken, scope: 'read_orders,read_products' });
       store = await StoreModel.findByShop(shop);
+      console.log('[/api/auth/callback] store created for', shop, 'with token prefix:', accessToken?.slice(0, 10));
+    } else {
+      // Update existing store's token
+      store.accessToken = accessToken;
+      await store.save();
+      console.log('[/api/auth/callback] store updated for', shop, 'with new token prefix:', accessToken?.slice(0, 10));
     }
 
     // Redirect to app root with store info
-    // For embedded apps: redirect to React app with query params
     let appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
-    // Ensure absolute URL with protocol
     if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
       appUrl = 'https://' + appUrl;
     }
