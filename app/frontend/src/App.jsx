@@ -21,7 +21,7 @@ function Sidebar({ activePage, setActivePage, store }) {
   const navItems = [
     { id: '#/dashboard', label: 'Dashboard', icon: 'grid' },
     { id: '#/offers', label: 'Offers', icon: 'tag' },
-    { id: '#/analytics', label: 'Stats', icon: 'chart' },
+    { id: '#/analytics', label: 'Analytics', icon: 'chart' },
     { id: '#/billing', label: 'Billing', icon: 'card' },
     { id: '#/settings', label: 'Settings', icon: 'gear' },
   ];

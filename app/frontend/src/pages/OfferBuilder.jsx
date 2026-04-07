@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api/index.js';
+import TargetingSelector from '../components/TargetingSelector.jsx';
+import VisualPreview from '../components/VisualPreview.jsx';
 
 export default function OfferBuilder({ store, appConfig }) {
   const [offers, setOffers] = useState([]);
@@ -12,28 +14,47 @@ export default function OfferBuilder({ store, appConfig }) {
   const [abVariantA, setAbVariantA] = useState(null);
   const [abSplit, setAbSplit] = useState(50);
   const stepContentRef = useRef(null);
+
+  // Active tab: 'active' | 'archived'
+  const [activeTab, setActiveTab] = useState('active');
+
+  // Offer status filter
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+
   const [form, setForm] = useState({
     name: '',
+    status: 'draft',
     // Step 1 — Trigger
     trigger_threshold: '50',
-    target_product_ids: '',
-    target_tags: '',
-    // Step 2 — Type
+    trigger_threshold_max: '',
+    target_products_include: [],
+    target_collections_include: [],
+    target_tags_include: [],
+    target_products_exclude: [],
+    target_collections_exclude: [],
+    target_tags_exclude: [],
+    first_time_customers_only: false,
+    // Step 3 — Content (no separate type step)
     offer_type: 'add_product',
-    // Step 3 — Content
     headline: 'Wait! Add this to your order',
     message: 'Get it delivered with your current order — just one click away.',
+    // Product upsell
     upsell_product_id: '',
     upsell_product_title: '',
     upsell_product_price: '',
     upsell_product_image: '',
+    // Discount code
     discount_code: '',
+    discount_amount: '',
     discount_percent: '',
-    active: true,
-    // Warranty fields
+    // Warranty
     warranty_price: '',
     warranty_description: '',
     warranty_covered: '',
+    // Urgency
+    one_time_offer: true,
+    confirmation_only: true,
     // Fallback
     fallback_offer_id: '',
   });
@@ -65,9 +86,16 @@ export default function OfferBuilder({ store, appConfig }) {
     setEditing(offer);
     setForm({
       name: offer.name || '',
+      status: offer.status || (offer.active ? 'published' : 'draft'),
       trigger_threshold: String(offer.trigger_threshold || '50'),
-      target_product_ids: offer.target_product_ids || '',
-      target_tags: offer.target_tags || '',
+      trigger_threshold_max: String(offer.trigger_threshold_max || ''),
+      target_products_include: offer.target_products_include || [],
+      target_collections_include: offer.target_collections_include || [],
+      target_tags_include: offer.target_tags_include || [],
+      target_products_exclude: offer.target_products_exclude || [],
+      target_collections_exclude: offer.target_collections_exclude || [],
+      target_tags_exclude: offer.target_tags_exclude || [],
+      first_time_customers_only: !!offer.first_time_customers_only,
       offer_type: offer.offer_type || 'add_product',
       headline: offer.headline || 'Wait! Add this to your order',
       message: offer.message || 'Get it delivered with your current order — just one click away.',
@@ -76,11 +104,13 @@ export default function OfferBuilder({ store, appConfig }) {
       upsell_product_price: offer.upsell_product_price || '',
       upsell_product_image: offer.upsell_product_image || '',
       discount_code: offer.discount_code || '',
+      discount_amount: offer.discount_amount || '',
       discount_percent: offer.discount_percent ? String(offer.discount_percent) : '',
-      active: !!offer.active,
       warranty_price: offer.warranty_price || '',
       warranty_description: offer.warranty_description || '',
       warranty_covered: offer.warranty_covered || '',
+      one_time_offer: offer.one_time_offer !== false,
+      confirmation_only: offer.confirmation_only !== false,
       fallback_offer_id: offer.fallback_offer_id || '',
     });
     setStep(1);
@@ -92,12 +122,16 @@ export default function OfferBuilder({ store, appConfig }) {
     setEditing(null);
     setStep(1);
     setForm({
-      name: '', trigger_threshold: '50', target_product_ids: '', target_tags: '',
+      name: '', status: 'draft', trigger_threshold: '50', trigger_threshold_max: '',
+      target_products_include: [], target_collections_include: [], target_tags_include: [],
+      target_products_exclude: [], target_collections_exclude: [], target_tags_exclude: [],
+      first_time_customers_only: false,
       offer_type: 'add_product', headline: 'Wait! Add this to your order',
       message: 'Get it delivered with your current order — just one click away.',
       upsell_product_id: '', upsell_product_title: '', upsell_product_price: '', upsell_product_image: '',
-      discount_code: '', discount_percent: '', active: true,
-      warranty_price: '', warranty_description: '', warranty_covered: '', fallback_offer_id: '',
+      discount_code: '', discount_amount: '', discount_percent: '',
+      warranty_price: '', warranty_description: '', warranty_covered: '',
+      one_time_offer: true, confirmation_only: true, fallback_offer_id: '',
     });
   }
 
@@ -107,10 +141,17 @@ export default function OfferBuilder({ store, appConfig }) {
 
     const payload = {
       name: form.name || null,
+      status: form.status,
       offer_type: form.offer_type,
       trigger_threshold: parseFloat(form.trigger_threshold) || 0,
-      target_product_ids: form.target_product_ids || null,
-      target_tags: form.target_tags || null,
+      trigger_threshold_max: form.trigger_threshold_max ? parseFloat(form.trigger_threshold_max) : null,
+      target_products_include: form.target_products_include.length ? form.target_products_include.map(p => p.id) : null,
+      target_collections_include: form.target_collections_include.length ? form.target_collections_include.map(c => c.id) : null,
+      target_tags_include: form.target_tags_include.length ? form.target_tags_include : null,
+      target_products_exclude: form.target_products_exclude.length ? form.target_products_exclude.map(p => p.id) : null,
+      target_collections_exclude: form.target_collections_exclude.length ? form.target_collections_exclude.map(c => c.id) : null,
+      target_tags_exclude: form.target_tags_exclude.length ? form.target_tags_exclude : null,
+      first_time_customers_only: form.first_time_customers_only,
       headline: form.headline || null,
       message: form.message || null,
       upsell_product_id: form.upsell_product_id || null,
@@ -118,11 +159,13 @@ export default function OfferBuilder({ store, appConfig }) {
       upsell_product_price: form.upsell_product_price ? parseFloat(form.upsell_product_price) : null,
       upsell_product_image: form.upsell_product_image || null,
       discount_code: form.discount_code || null,
+      discount_amount: form.discount_amount ? parseFloat(form.discount_amount) : null,
       discount_percent: form.discount_percent ? parseFloat(form.discount_percent) : null,
-      active: form.active,
       warranty_price: form.warranty_price ? parseFloat(form.warranty_price) : null,
       warranty_description: form.warranty_description || null,
       warranty_covered: form.warranty_covered || null,
+      one_time_offer: form.one_time_offer,
+      confirmation_only: form.confirmation_only,
       fallback_offer_id: form.fallback_offer_id || null,
     };
 
@@ -139,26 +182,35 @@ export default function OfferBuilder({ store, appConfig }) {
     }
   }
 
-  async function toggleActive(offer) {
+  async function togglePublish(offer) {
     try {
-      await api.updateUpsellOffer(offer.id, { active: !offer.active });
+      const newStatus = offer.status === 'published' ? 'draft' : 'published';
+      await api.updateUpsellOffer(offer.id, { status: newStatus });
       loadOffers();
     } catch (e) {
       alert('Error updating offer: ' + e.message);
     }
   }
 
-  async function deleteOffer(id) {
-    if (!confirm('Delete this offer?')) return;
+  async function archiveOffer(id) {
     try {
-      await api.deleteUpsellOffer(id);
+      await api.updateUpsellOffer(id, { status: 'archived' });
+      loadOffers();
+    } catch (e) {
+      alert('Error archiving offer: ' + e.message);
+    }
+  }
+
+  async function hardDeleteOffer(id) {
+    if (!confirm('Permanently delete this offer? This cannot be undone.')) return;
+    try {
+      await api.hardDeleteUpsellOffer(id);
       loadOffers();
     } catch (e) {
       alert('Error deleting offer: ' + e.message);
     }
   }
 
-  // Create A/B Test — clones current offer as variant B
   function openABTestModal(offer) {
     setAbVariantA(offer);
     setAbSplit(50);
@@ -167,62 +219,79 @@ export default function OfferBuilder({ store, appConfig }) {
 
   async function createABTest() {
     try {
-      const variantB = await api.cloneOfferForABTest(abVariantA.id, {
+      await api.cloneOfferForABTest(abVariantA.id, {
         traffic_split_b: abSplit,
         name: `${abVariantA.name || abVariantA.headline} — Variant B`,
       });
-      closeForm();
+      setShowABModal(false);
       loadOffers();
     } catch (err) {
       alert('Error creating A/B test: ' + err.message);
     }
-    setShowABModal(false);
   }
 
-  // Copy preview link
   async function copyPreviewLink(offerId) {
     const previewUrl = `${window.location.origin}${window.location.pathname}#/upsell-preview/${offerId}`;
     try {
       await navigator.clipboard.writeText(previewUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch (e) {
-      // Fallback
-      const textArea = document.createElement('textarea');
-      textArea.value = previewUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
+      const ta = document.createElement('textarea');
+      ta.value = previewUrl;
+      document.body.appendChild(ta);
+      ta.select();
       document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      document.body.removeChild(ta);
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  const previewPrice = form.offer_type === 'add_product'
-    ? (form.upsell_product_price ? `+$${parseFloat(form.upsell_product_price).toFixed(2)}` : '+$24.99')
-    : form.offer_type === 'warranty'
-    ? (form.warranty_price ? `+$${parseFloat(form.warranty_price).toFixed(2)}/order` : '+$9.99/order')
-    : (form.discount_percent ? `${form.discount_percent}% OFF` : '10% OFF');
+  // Filter offers by tab
+  const visibleOffers = offers.filter(o => {
+    if (activeTab === 'archived') return o.status === 'archived';
+    return o.status !== 'archived';
+  }).filter(o => {
+    if (statusFilter !== 'all') return o.status === statusFilter;
+    return true;
+  }).filter(o => {
+    if (typeFilter !== 'all') return o.offer_type === typeFilter;
+    return true;
+  });
 
-  const previewHeadline = form.headline || 'Wait! Add this to your order';
-  const previewMessage = form.message || 'Get it delivered with your current order — just one click away.';
+  // Fallback options
+  const fallbackOptions = offers.filter(o => o.id !== editing?.id && o.status !== 'archived');
 
-  // Live preview type badge
-  const previewTypeLabel = {
-    'add_product': 'Add to Order',
-    'discount_code': 'Discount Code',
-    'warranty': 'Warranty/Protection',
-  }[form.offer_type] || 'Add to Order';
+  function getStatusBadge(status) {
+    const map = {
+      draft: { label: 'Draft', class: 'draft' },
+      published: { label: 'Published', class: 'published' },
+      archived: { label: 'Archived', class: 'archived' },
+    };
+    const s = map[status] || map.draft;
+    return <span className={`status-badge ${s.class}`}>{s.label}</span>;
+  }
 
-  // Get offers for fallback dropdown (exclude current editing offer)
-  const fallbackOptions = offers.filter(o => o.id !== editing?.id);
+  function getTypeLabel(type) {
+    return { add_product: 'Add to Order', discount_code: 'Discount', warranty: 'Warranty' }[type] || type;
+  }
+
+  function getTriggerSummary(offer) {
+    const parts = [];
+    if (offer.trigger_threshold) parts.push(`$${offer.trigger_threshold}+`);
+    if (offer.target_products_include?.length) parts.push(`${offer.target_products_include.length} products`);
+    if (offer.target_collections_include?.length) parts.push(`${offer.target_collections_include.length} collections`);
+    if (offer.target_tags_include?.length) parts.push(`${offer.target_tags_include.length} tags`);
+    if (offer.first_time_customers_only) parts.push('First-time');
+    return parts.length ? parts.join(', ') : 'All orders';
+  }
+
+  const previewForm = form;
 
   if (!store) {
     return (
       <div className="empty-state">
-        <h3 style={{fontSize:'18px',fontWeight:600,color:'#fafafa',marginBottom:'8px'}}>Connect Your Store</h3>
-        <p style={{color:'#71717a'}}>Connect your Shopify store to create upsell offers.</p>
+        <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#fafafa', marginBottom: '8px' }}>Connect Your Store</h3>
+        <p style={{ color: '#71717a' }}>Connect your Shopify store to create upsell offers.</p>
       </div>
     );
   }
@@ -244,104 +313,138 @@ export default function OfferBuilder({ store, appConfig }) {
           <p className="page-subtitle">Create and manage your post-purchase upsell offers</p>
         </div>
         <button className="btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Create New Offer
         </button>
       </div>
 
-      {offers.length === 0 ? (
+      {/* Tabs */}
+      <div className="offers-tabs">
+        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>
+          Active Offers
+        </button>
+        <button className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`} onClick={() => setActiveTab('archived')}>
+          Archived
+        </button>
+      </div>
+
+      {visibleOffers.length === 0 ? (
         <div className="card empty-offers">
           <div className="empty-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
-              <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
-              <line x1="7" y1="7" x2="7.01" y2="7"/>
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
             </svg>
           </div>
-          <h3>No offers yet</h3>
-          <p>Create your first post-purchase upsell offer to start boosting revenue.</p>
-          <button className="btn-primary" onClick={() => setShowForm(true)}>Create Your First Offer</button>
+          <h3>{activeTab === 'archived' ? 'No archived offers' : 'No offers yet'}</h3>
+          <p>{activeTab === 'archived' ? 'Archived offers will appear here.' : 'Create your first post-purchase upsell offer to start boosting revenue.'}</p>
+          {activeTab !== 'archived' && (
+            <button className="btn-primary" onClick={() => setShowForm(true)}>Create Your First Offer</button>
+          )}
         </div>
       ) : (
-        <div className="offers-table-wrap">
-          <table className="offers-table">
-            <thead>
-              <tr>
-                <th>Offer</th>
-                <th>Type</th>
-                <th>Trigger</th>
-                <th>Acceptance Rate</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {offers.map(offer => {
-                const rate = offer.total_triggered > 0 ? ((offer.total_accepted / offer.total_triggered) * 100).toFixed(1) : '—';
-                return (
-                  <tr key={offer.id} className={!offer.active ? 'inactive-row' : ''}>
-                    <td>
-                      <div className="offer-name-cell">
-                        <span className="offer-name">{offer.name || offer.headline || `Offer #${offer.id}`}</span>
-                        {offer.ab_test_id && <span className="ab-indicator">A/B</span>}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`type-badge ${offer.offer_type}`}>
-                        {offer.offer_type === 'add_product' ? 'Add to Order' : offer.offer_type === 'warranty' ? 'Warranty' : 'Discount Code'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="trigger-cell">
-                        Min ${offer.trigger_threshold || 0}
-                        {offer.target_product_ids && <span className="trigger-tag">Product</span>}
-                        {offer.target_tags && <span className="trigger-tag">Tag</span>}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="rate-cell">{rate !== '—' ? `${rate}%` : '—'}</span>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${offer.active ? 'active' : 'paused'}`}>
-                        {offer.active ? 'Active' : 'Paused'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="action-btns">
-                        <button className="btn-action" onClick={() => startEdit(offer)}>Edit</button>
-                        <button className="btn-action" onClick={() => copyPreviewLink(offer.id)} title="Copy preview link">
-                          {copied ? '✓ Copied' : '🔗'}
-                        </button>
-                        {!offer.ab_test_id && (
-                          <button className="btn-action ab-btn" onClick={() => openABTestModal(offer)} title="Create A/B test">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
-                            </svg>
-                          </button>
-                        )}
-                        <button className="btn-action danger" onClick={() => deleteOffer(offer.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="offers-grid">
+          {visibleOffers.map(offer => {
+            const rate = offer.total_triggered > 0 ? ((offer.total_accepted / offer.total_triggered) * 100).toFixed(1) : '0.0';
+            const revenue = offer.revenue_lifted || 0;
+            return (
+              <div key={offer.id} className="offer-card">
+                <div className="offer-card-header">
+                  <div className="offer-card-name">{offer.name || offer.headline || `Offer #${offer.id}`}</div>
+                  {getStatusBadge(offer.status)}
+                </div>
+
+                <div className="offer-card-meta">
+                  <span className={`type-badge ${offer.offer_type}`}>{getTypeLabel(offer.offer_type)}</span>
+                  <span className="trigger-summary">{getTriggerSummary(offer)}</span>
+                </div>
+
+                <div className="offer-card-stats">
+                  <div className="offer-stat">
+                    <div className="offer-stat-label">Accept Rate</div>
+                    <div className="offer-stat-value">{rate}%</div>
+                    <div className="offer-progress-bar">
+                      <div className="offer-progress-fill" style={{ width: `${rate}%` }} />
+                    </div>
+                  </div>
+                  <div className="offer-stat">
+                    <div className="offer-stat-label">Revenue</div>
+                    <div className="offer-stat-value revenue">${revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  </div>
+                </div>
+
+                <div className="offer-card-actions">
+                  <button className="btn-icon" title="Edit" onClick={() => startEdit(offer)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button className="btn-icon" title={offer.status === 'published' ? 'Unpublish' : 'Publish'}
+                    onClick={() => togglePublish(offer)}>
+                    {offer.status === 'published' ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                  {offer.status !== 'archived' ? (
+                    <button className="btn-icon" title="Archive" onClick={() => archiveOffer(offer.id)}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button className="btn-icon danger" title="Delete permanently" onClick={() => hardDeleteOffer(offer.id)}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  )}
+                  <button className="btn-icon" title="Copy preview link" onClick={() => copyPreviewLink(offer.id)}>
+                    {copied ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" width="14" height="14">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                      </svg>
+                    )}
+                  </button>
+                  {!offer.ab_test_id && (
+                    <button className="btn-icon ab-btn" title="A/B Test" onClick={() => openABTestModal(offer)}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* A/B Test Creation Modal */}
+      {/* A/B Test Modal */}
       {showABModal && abVariantA && (
         <div className="modal-overlay" onClick={() => setShowABModal(false)}>
           <div className="modal ab-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Create A/B Test</h2>
               <button className="modal-close" onClick={() => setShowABModal(false)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
             <div className="modal-body">
               <p className="ab-desc">Clone "<strong>{abVariantA.name || abVariantA.headline}</strong>" as Variant B and split your traffic to test performance.</p>
-              
               <div className="ab-preview-cards">
                 <div className="ab-card variant-a">
                   <div className="ab-card-label">Variant A</div>
@@ -349,11 +452,7 @@ export default function OfferBuilder({ store, appConfig }) {
                   <div className="ab-card-percent">{100 - abSplit}%</div>
                   <div className="ab-card-traffic">of traffic</div>
                 </div>
-                <div className="ab-arrow">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-                    <polyline points="9 18 15 12 9 6"/>
-                  </svg>
-                </div>
+                <div className="ab-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24"><polyline points="9 18 15 12 9 6" /></svg></div>
                 <div className="ab-card variant-b">
                   <div className="ab-card-label">Variant B</div>
                   <div className="ab-card-name">{abVariantA.name || abVariantA.headline || 'Offer'} — Copy</div>
@@ -361,45 +460,30 @@ export default function OfferBuilder({ store, appConfig }) {
                   <div className="ab-card-traffic">of traffic</div>
                 </div>
               </div>
-
               <div className="ab-slider-section">
                 <label className="form-label">Traffic Split</label>
                 <div className="ab-slider-row">
                   <span className="ab-split-label">A: {100 - abSplit}%</span>
-                  <input
-                    type="range"
-                    min="10"
-                    max="90"
-                    step="5"
-                    value={abSplit}
-                    onChange={e => setAbSplit(parseInt(e.target.value))}
-                    className="ab-slider"
-                  />
+                  <input type="range" min="10" max="90" step="5" value={abSplit}
+                    onChange={e => setAbSplit(parseInt(e.target.value))} className="ab-slider" />
                   <span className="ab-split-label">B: {abSplit}%</span>
                 </div>
                 <div className="ab-slider-presets">
-                  <button className={`preset-btn ${abSplit === 50 ? 'active' : ''}`} onClick={() => setAbSplit(50)}>50/50</button>
-                  <button className={`preset-btn ${abSplit === 60 ? 'active' : ''}`} onClick={() => setAbSplit(60)}>60/40</button>
-                  <button className={`preset-btn ${abSplit === 70 ? 'active' : ''}`} onClick={() => setAbSplit(70)}>70/30</button>
-                  <button className={`preset-btn ${abSplit === 80 ? 'active' : ''}`} onClick={() => setAbSplit(80)}>80/20</button>
+                  {[50, 60, 70, 80].map(v => (
+                    <button key={v} className={`preset-btn ${abSplit === v ? 'active' : ''}`} onClick={() => setAbSplit(v)}>{v / 100 === 0.5 ? '50/50' : `${v}/${100 - v}`}</button>
+                  ))}
                 </div>
               </div>
-
               <div className="ab-info">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
                 <span>Variant B will be a copy of Variant A. You can edit it after creation to change the offer content.</span>
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setShowABModal(false)}>Cancel</button>
-              <button className="btn-primary" onClick={createABTest}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
-                </svg>
-                Start A/B Test
-              </button>
+              <button className="btn-primary" onClick={createABTest}>Start A/B Test</button>
             </div>
           </div>
         </div>
@@ -408,93 +492,123 @@ export default function OfferBuilder({ store, appConfig }) {
       {/* Offer Builder Modal */}
       {showForm && (
         <div className="modal-overlay" onClick={closeForm}>
-          <div className="modal builder-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal builder-modal wide-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Offer' : 'Create New Offer'}</h2>
-              <button className="modal-close" onClick={closeForm}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+              <div className="modal-header-actions">
+                {editing && editing.status === 'draft' && (
+                  <button className="btn-publish" onClick={() => { setForm(f => ({ ...f, status: 'published' })); }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                    Publish
+                  </button>
+                )}
+                {editing && editing.status === 'published' && (
+                  <button className="btn-unpublish" onClick={() => { setForm(f => ({ ...f, status: 'draft' })); }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                    Unpublish
+                  </button>
+                )}
+                <button className="modal-close" onClick={closeForm}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
             </div>
 
+            {/* Step nav — now 2 steps: Trigger+Targeting and Content */}
             <div className="steps-nav">
-              <div className={`step-dot ${step >= 1 ? 'active' : ''}`}>
-                <span>1</span>Trigger
-              </div>
-              <div className={`step-dot ${step >= 2 ? 'active' : ''}`}>
-                <span>2</span>Upsell Type
-              </div>
-              <div className={`step-dot ${step >= 3 ? 'active' : ''}`}>
-                <span>3</span>Content
-              </div>
+              <div className={`step-dot ${step >= 1 ? 'active' : ''}`}><span>1</span>Trigger & Targeting</div>
+              <div className={`step-dot ${step >= 2 ? 'active' : ''}`}><span>2</span>Content</div>
             </div>
 
             <form onSubmit={handleSubmit} className="builder-form">
               {step === 1 && (
                 <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Set Offer Triggers</h3>
-                  <p className="step-desc">Define when this offer should appear to customers.</p>
+                  <h3 className="step-title">Set Offer Triggers & Targeting</h3>
+                  <p className="step-desc">Define when this offer appears and which customers see it.</p>
 
                   <div className="form-group">
                     <label className="form-label">Offer Name <span className="optional">(optional)</span></label>
-                    <input
-                      className="form-input"
-                      type="text"
-                      value={form.name}
-                      onChange={e => setForm({...form, name: e.target.value})}
-                      placeholder="e.g. Summer Flash Sale"
-                    />
+                    <input className="form-input" type="text" value={form.name}
+                      onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Summer Flash Sale" />
+                  </div>
+
+                  {/* Order amount */}
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Minimum Order Amount ($)</label>
+                      <input className="form-input" type="number" step="0.01" value={form.trigger_threshold}
+                        onChange={e => setForm({ ...form, trigger_threshold: e.target.value })} placeholder="50.00" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Maximum Order Amount ($) <span className="optional">(optional)</span></label>
+                      <input className="form-input" type="number" step="0.01" value={form.trigger_threshold_max}
+                        onChange={e => setForm({ ...form, trigger_threshold_max: e.target.value })} placeholder="No max" />
+                    </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Minimum Order Amount ($)</label>
-                    <input
-                      className="form-input"
-                      type="number"
-                      step="0.01"
-                      value={form.trigger_threshold}
-                      onChange={e => setForm({...form, trigger_threshold: e.target.value})}
-                      placeholder="50.00"
-                    />
-                    <span className="form-hint">Offer appears for orders at or above this value</span>
+                    <label className="toggle-label">
+                      <span>First-time customers only</span>
+                      <label className="toggle">
+                        <input type="checkbox" checked={form.first_time_customers_only}
+                          onChange={e => setForm({ ...form, first_time_customers_only: e.target.checked })} />
+                        <span className="toggle-slider" />
+                      </label>
+                    </label>
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Target Product IDs <span className="optional">(optional)</span></label>
-                    <input
-                      className="form-input"
-                      type="text"
-                      value={form.target_product_ids}
-                      onChange={e => setForm({...form, target_product_ids: e.target.value})}
-                      placeholder="123,456,789"
-                    />
-                    <span className="form-hint">Leave blank to show on all orders above the minimum</span>
+                  {/* Targeting — Include */}
+                  <div className="targeting-section">
+                    <div className="targeting-section-header">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" width="14" height="14">
+                        <circle cx="12" cy="12" r="10" /><polyline points="12 8 12 12 14 14" />
+                      </svg>
+                      <span style={{ color: '#8b5cf6', fontSize: '13px', fontWeight: 600 }}>Include Targeting</span>
+                    </div>
+                    <TargetingSelector mode="include" field="products" label="Target Products"
+                      values={form.target_products_include}
+                      onChange={vals => setForm({ ...form, target_products_include: vals })} />
+                    <TargetingSelector mode="include" field="collections" label="Target Collections"
+                      values={form.target_collections_include}
+                      onChange={vals => setForm({ ...form, target_collections_include: vals })} />
+                    <TargetingSelector mode="include" field="tags" label="Target Tags"
+                      values={form.target_tags_include}
+                      onChange={vals => setForm({ ...form, target_tags_include: vals })} />
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Target Tags <span className="optional">(optional)</span></label>
-                    <input
-                      className="form-input"
-                      type="text"
-                      value={form.target_tags}
-                      onChange={e => setForm({...form, target_tags: e.target.value})}
-                      placeholder="featured,bestseller"
-                    />
-                    <span className="form-hint">Comma-separated product tags</span>
+                  {/* Targeting — Exclude */}
+                  <div className="targeting-section" style={{ marginTop: '8px' }}>
+                    <div className="targeting-section-header">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" width="14" height="14">
+                        <circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                      </svg>
+                      <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: 600 }}>Exclude Targeting</span>
+                    </div>
+                    <TargetingSelector mode="exclude" field="products" label="Exclude Products"
+                      values={form.target_products_exclude}
+                      onChange={vals => setForm({ ...form, target_products_exclude: vals })} />
+                    <TargetingSelector mode="exclude" field="collections" label="Exclude Collections"
+                      values={form.target_collections_exclude}
+                      onChange={vals => setForm({ ...form, target_collections_exclude: vals })} />
+                    <TargetingSelector mode="exclude" field="tags" label="Exclude Tags"
+                      values={form.target_tags_exclude}
+                      onChange={vals => setForm({ ...form, target_tags_exclude: vals })} />
                   </div>
 
-                  {/* Fallback offer toggle */}
+                  {/* Fallback */}
                   <div className="form-group fallback-group">
                     <label className="form-label">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <polyline points="9 18 15 12 9 6"/>
+                        <polyline points="9 18 15 12 9 6" />
                       </svg>
                       If declined, show this offer <span className="optional">(optional)</span>
                     </label>
-                    <select
-                      className="form-input"
-                      value={form.fallback_offer_id}
-                      onChange={e => setForm({...form, fallback_offer_id: e.target.value})}
-                    >
+                    <select className="form-input" value={form.fallback_offer_id}
+                      onChange={e => setForm({ ...form, fallback_offer_id: e.target.value })}>
                       <option value="">No fallback (show discount code)</option>
                       {fallbackOptions.map(o => (
                         <option key={o.id} value={o.id}>{o.name || o.headline || `Offer #${o.id}`}</option>
@@ -507,309 +621,161 @@ export default function OfferBuilder({ store, appConfig }) {
 
               {step === 2 && (
                 <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Choose Upsell Type</h3>
-                  <p className="step-desc">Select how you want to upsell your customer.</p>
+                  <div className="content-editor">
+                    {/* Left — Form fields */}
+                    <div className="content-editor-left">
+                      <h3 className="step-title">Offer Content</h3>
+                      <p className="step-desc">Write the message and configure the upsell type.</p>
 
-                  <div className="type-selector">
-                    <div
-                      className={`type-option ${form.offer_type === 'add_product' ? 'selected' : ''}`}
-                      onClick={() => setForm({...form, offer_type: 'add_product'})}
-                    >
-                      <div className="type-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-                          <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
-                          <line x1="3" y1="6" x2="21" y2="6"/>
-                          <path d="M16 10a4 4 0 01-8 0"/>
-                        </svg>
+                      {/* Upsell type compact selector */}
+                      <div className="upsell-type-selector">
+                        {['add_product', 'discount_code', 'warranty'].map(type => (
+                          <div key={type}
+                            className={`upsell-type-btn ${form.offer_type === type ? 'active' : ''}`}
+                            onClick={() => setForm({ ...form, offer_type: type })}>
+                            {type === 'add_product' && (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" />
+                              </svg>
+                            )}
+                            {type === 'warranty' && (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                              </svg>
+                            )}
+                            {type === 'discount_code' && (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                                <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                              </svg>
+                            )}
+                            <span>{type === 'add_product' ? 'Add to Order' : type === 'warranty' ? 'Warranty' : 'Discount Code'}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="type-info">
-                        <div className="type-name">Add Product to Order</div>
-                        <div className="type-desc">One-click add — highest conversion (10-18%)</div>
-                      </div>
-                      <div className="type-radio">
-                        {form.offer_type === 'add_product' && <div className="radio-dot" />}
-                      </div>
-                    </div>
 
-                    <div
-                      className={`type-option ${form.offer_type === 'warranty' ? 'selected' : ''}`}
-                      onClick={() => setForm({...form, offer_type: 'warranty'})}
-                    >
-                      <div className="type-icon warranty-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                      </div>
-                      <div className="type-info">
-                        <div className="type-name">Warranty / Protection</div>
-                        <div className="type-desc">Hidden gem — 15-25% acceptance, high margin</div>
-                      </div>
-                      <div className="type-radio">
-                        {form.offer_type === 'warranty' && <div className="radio-dot" />}
-                      </div>
-                    </div>
-
-                    <div
-                      className={`type-option ${form.offer_type === 'discount_code' ? 'selected' : ''}`}
-                      onClick={() => setForm({...form, offer_type: 'discount_code'})}
-                    >
-                      <div className="type-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-                          <line x1="12" y1="1" x2="12" y2="23"/>
-                          <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
-                        </svg>
-                      </div>
-                      <div className="type-info">
-                        <div className="type-name">Discount Code</div>
-                        <div className="type-desc">For next purchase — 5-10% conversion</div>
-                      </div>
-                      <div className="type-radio">
-                        {form.offer_type === 'discount_code' && <div className="radio-dot" />}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Product fields for add_product type */}
-                  {form.offer_type === 'add_product' && (
-                    <div className="type-specific-fields">
-                      <div className="form-group" style={{marginTop: '20px'}}>
-                        <label className="form-label">Upsell Product ID</label>
-                        <input
-                          className="form-input"
-                          type="text"
-                          value={form.upsell_product_id}
-                          onChange={e => setForm({...form, upsell_product_id: e.target.value})}
-                          placeholder="Shopify product ID"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Warranty fields */}
-                  {form.offer_type === 'warranty' && (
-                    <div className="type-specific-fields warranty-fields">
-                      <div className="form-group" style={{marginTop: '20px'}}>
-                        <label className="form-label">Warranty Price ($)</label>
-                        <input
-                          className="form-input"
-                          type="number"
-                          step="0.01"
-                          value={form.warranty_price}
-                          onChange={e => setForm({...form, warranty_price: e.target.value})}
-                          placeholder="9.99"
-                        />
-                        <span className="form-hint">Per-order charge for warranty coverage</span>
-                      </div>
+                      {/* Headline & Message */}
                       <div className="form-group">
-                        <label className="form-label">Warranty Description</label>
-                        <input
-                          className="form-input"
-                          type="text"
-                          value={form.warranty_description}
-                          onChange={e => setForm({...form, warranty_description: e.target.value})}
-                          placeholder="Extended protection for your purchase"
-                        />
+                        <label className="form-label">Headline</label>
+                        <input className="form-input" type="text" value={form.headline}
+                          onChange={e => setForm({ ...form, headline: e.target.value })}
+                          placeholder="Wait! Add this to your order" />
                       </div>
+
                       <div className="form-group">
-                        <label className="form-label">What's Covered</label>
-                        <textarea
-                          className="form-input"
-                          rows={2}
-                          value={form.warranty_covered}
-                          onChange={e => setForm({...form, warranty_covered: e.target.value})}
-                          placeholder="Manufacturing defects, malfunctions, accidental damage"
-                        />
+                        <label className="form-label">Message / Description</label>
+                        <textarea className="form-input" rows={3} value={form.message}
+                          onChange={e => setForm({ ...form, message: e.target.value })}
+                          placeholder="Get it delivered with your current order — just one click away." />
                       </div>
-                    </div>
-                  )}
 
-                  {/* Discount code fields */}
-                  {form.offer_type === 'discount_code' && (
-                    <div className="type-specific-fields">
-                      <div className="form-group" style={{marginTop: '20px'}}>
-                        <label className="form-label">Discount Code</label>
-                        <input
-                          className="form-input"
-                          type="text"
-                          value={form.discount_code}
-                          onChange={e => setForm({...form, discount_code: e.target.value})}
-                          placeholder="SAVE20"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Discount Percent (%)</label>
-                        <input
-                          className="form-input"
-                          type="number"
-                          value={form.discount_percent}
-                          onChange={e => setForm({...form, discount_percent: e.target.value})}
-                          placeholder="20"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Offer Content</h3>
-                  <p className="step-desc">Write the message your customers will see.</p>
-
-                  <div className="form-group">
-                    <label className="form-label">Headline</label>
-                    <input
-                      className="form-input"
-                      type="text"
-                      value={form.headline}
-                      onChange={e => setForm({...form, headline: e.target.value})}
-                      placeholder="Wait! Add this to your order"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Message</label>
-                    <textarea
-                      className="form-input"
-                      rows={3}
-                      value={form.message}
-                      onChange={e => setForm({...form, message: e.target.value})}
-                      placeholder="Get it delivered with your current order — just one click away."
-                    />
-                  </div>
-
-                  {form.offer_type === 'add_product' && (
-                    <>
-                      <div className="form-group">
-                        <label className="form-label">Product Title</label>
-                        <input
-                          className="form-input"
-                          type="text"
-                          value={form.upsell_product_title}
-                          onChange={e => setForm({...form, upsell_product_title: e.target.value})}
-                          placeholder="Product display name"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Product Price ($)</label>
-                        <input
-                          className="form-input"
-                          type="number"
-                          step="0.01"
-                          value={form.upsell_product_price}
-                          onChange={e => setForm({...form, upsell_product_price: e.target.value})}
-                          placeholder="24.99"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Product Image URL <span className="optional">(optional)</span></label>
-                        <input
-                          className="form-input"
-                          type="text"
-                          value={form.upsell_product_image}
-                          onChange={e => setForm({...form, upsell_product_image: e.target.value})}
-                          placeholder="https://cdn.shopify.com/..."
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {/* Preview link */}
-                  {editing && (
-                    <div className="form-group preview-link-group">
-                      <label className="form-label">Preview Link</label>
-                      <div className="preview-link-row">
-                        <input
-                          className="form-input preview-link-input"
-                          type="text"
-                          readOnly
-                          value={`${window.location.origin}${window.location.pathname}#/upsell-preview/${editing.id}`}
-                        />
-                        <button
-                          type="button"
-                          className="btn-copy"
-                          onClick={() => copyPreviewLink(editing.id)}
-                        >
-                          {copied ? '✓ Copied' : 'Copy Link'}
-                        </button>
-                      </div>
-                      <span className="form-hint">Share this link to preview how the offer looks to customers</span>
-                    </div>
-                  )}
-
-                  <div className="form-group">
-                    <label className="toggle-label">
-                      <span>Active (offer will show to customers)</span>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={form.active}
-                          onChange={e => setForm({...form, active: e.target.checked})}
-                        />
-                        <span className="toggle-slider" />
-                      </label>
-                    </label>
-                  </div>
-
-                  {/* Live Preview */}
-                  <div className="live-preview-section">
-                    <div className="preview-label">Live Preview</div>
-                    <div className="live-preview">
-                      <div className="preview-store-header">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-                        Your Store
-                        <span className="preview-offer-type-badge">{previewTypeLabel}</span>
-                      </div>
-                      <div className="preview-body">
-                        <div className="preview-offer-badges">
-                          <span className="preview-badge one-time">One-time offer</span>
-                          <span className="preview-badge social">127 people added this week</span>
-                        </div>
-                        <div className="preview-thanks">Thanks for your order!</div>
-                        <div className="preview-offer-card">
-                          {form.offer_type === 'warranty' ? (
-                            <div className="preview-warranty">
-                              <div className="preview-warranty-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="28" height="28">
-                                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                                </svg>
-                              </div>
-                              <div className="preview-product-info">
-                                <div className="preview-headline">{previewHeadline}</div>
-                                <div className="preview-message">{previewMessage}</div>
-                                <div className="preview-price">{previewPrice}</div>
-                              </div>
+                      {/* Type-specific fields */}
+                      {form.offer_type === 'add_product' && (
+                        <div className="type-fields">
+                          <div className="form-group">
+                            <label className="form-label">Product Search</label>
+                            <input className="form-input" type="text" value={form.upsell_product_title}
+                              onChange={e => setForm({ ...form, upsell_product_title: e.target.value })}
+                              placeholder="Search Shopify products..." />
+                          </div>
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label className="form-label">Price ($)</label>
+                              <input className="form-input" type="number" step="0.01" value={form.upsell_product_price}
+                                onChange={e => setForm({ ...form, upsell_product_price: e.target.value })} placeholder="24.99" />
                             </div>
-                          ) : form.offer_type === 'discount_code' ? (
-                            <div className="preview-discount">
-                              <div className="preview-discount-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="28" height="28">
-                                  <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
-                                </svg>
-                              </div>
-                              <div className="preview-product-info">
-                                <div className="preview-headline">{previewHeadline}</div>
-                                <div className="preview-message">{previewMessage}</div>
-                                <div className="preview-discount-code">{form.discount_code || 'SAVE15'} — {form.discount_percent || 15}% OFF</div>
-                              </div>
+                            <div className="form-group">
+                              <label className="form-label">Product Image URL <span className="optional">(optional)</span></label>
+                              <input className="form-input" type="text" value={form.upsell_product_image}
+                                onChange={e => setForm({ ...form, upsell_product_image: e.target.value })}
+                                placeholder="https://cdn.shopify.com/..." />
                             </div>
-                          ) : (
-                            <>
-                              <div className="preview-product-img" />
-                              <div className="preview-product-info">
-                                <div className="preview-headline">{previewHeadline}</div>
-                                <div className="preview-message">{previewMessage}</div>
-                                <div className="preview-price">{previewPrice}</div>
-                              </div>
-                            </>
-                          )}
+                          </div>
                         </div>
-                        <div className="preview-btn-green">Add to Order</div>
-                        <div className="preview-skip">No thanks, maybe later</div>
-                        <div className="preview-trust">
-                          <span>Secure checkout</span> • <span>Powered by Shopify</span> • <span>No extra shipping</span>
+                      )}
+
+                      {form.offer_type === 'discount_code' && (
+                        <div className="type-fields">
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label className="form-label">Discount Code</label>
+                              <input className="form-input" type="text" value={form.discount_code}
+                                onChange={e => setForm({ ...form, discount_code: e.target.value })}
+                                placeholder="SAVE20" />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Discount Value</label>
+                              <input className="form-input" type="number" value={form.discount_percent}
+                                onChange={e => setForm({ ...form, discount_percent: e.target.value })}
+                                placeholder="20" />
+                              <span className="form-hint">Enter % or $ amount</span>
+                            </div>
+                          </div>
                         </div>
+                      )}
+
+                      {form.offer_type === 'warranty' && (
+                        <div className="type-fields warranty-fields">
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label className="form-label">Warranty Price ($)</label>
+                              <input className="form-input" type="number" step="0.01" value={form.warranty_price}
+                                onChange={e => setForm({ ...form, warranty_price: e.target.value })} placeholder="9.99" />
+                            </div>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Description</label>
+                            <input className="form-input" type="text" value={form.warranty_description}
+                              onChange={e => setForm({ ...form, warranty_description: e.target.value })}
+                              placeholder="Extended protection plan" />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">What's Covered</label>
+                            <textarea className="form-input" rows={2} value={form.warranty_covered}
+                              onChange={e => setForm({ ...form, warranty_covered: e.target.value })}
+                              placeholder="Manufacturing defects, malfunctions, accidental damage" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Urgency options */}
+                      <div className="urgency-options">
+                        <div className="urgency-title">Urgency Options</div>
+                        <label className="toggle-label">
+                          <span>One-time offer badge</span>
+                          <label className="toggle">
+                            <input type="checkbox" checked={form.one_time_offer}
+                              onChange={e => setForm({ ...form, one_time_offer: e.target.checked })} />
+                            <span className="toggle-slider" />
+                          </label>
+                        </label>
+                        <label className="toggle-label">
+                          <span>Show on confirmation page only</span>
+                          <label className="toggle">
+                            <input type="checkbox" checked={form.confirmation_only}
+                              onChange={e => setForm({ ...form, confirmation_only: e.target.checked })} />
+                            <span className="toggle-slider" />
+                          </label>
+                        </label>
                       </div>
+
+                      {/* Preview link */}
+                      {editing && (
+                        <div className="form-group preview-link-group">
+                          <label className="form-label">Preview Link</label>
+                          <div className="preview-link-row">
+                            <input className="form-input preview-link-input" type="text" readOnly
+                              value={`${window.location.origin}${window.location.pathname}#/upsell-preview/${editing.id}`} />
+                            <button type="button" className="btn-copy" onClick={() => copyPreviewLink(editing.id)}>
+                              {copied ? '✓ Copied' : 'Copy Link'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right — Live Visual Preview */}
+                    <div className="content-editor-right">
+                      <VisualPreview form={previewForm} />
                     </div>
                   </div>
                 </div>
@@ -817,14 +783,10 @@ export default function OfferBuilder({ store, appConfig }) {
 
               <div className="form-actions">
                 {step > 1 && (
-                  <button type="button" className="btn-secondary" onClick={() => setStep(s => s - 1)}>
-                    Back
-                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setStep(s => s - 1)}>Back</button>
                 )}
-                {step < 3 ? (
-                  <button type="button" className="btn-primary" onClick={() => setStep(s => s + 1)}>
-                    Continue
-                  </button>
+                {step < 2 ? (
+                  <button type="button" className="btn-primary" onClick={() => setStep(s => s + 1)}>Continue</button>
                 ) : (
                   <button type="submit" className="btn-primary">
                     {editing ? 'Update Offer' : 'Create Offer'}
@@ -845,44 +807,54 @@ export default function OfferBuilder({ store, appConfig }) {
         .btn-primary:hover { background: #7c3aed; }
         .btn-secondary { background: #27272a; color: #e5e5e5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
         .btn-secondary:hover { background: #3f3f46; }
+        .btn-publish { display: inline-flex; align-items: center; gap: 6px; background: #22c55e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .btn-unpublish { display: inline-flex; align-items: center; gap: 6px; background: #27272a; color: #e5e5e5; border: 1px solid #3f3f46; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+
+        .offers-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #27272a; padding-bottom: 0; }
+        .tab-btn { background: none; border: none; color: #71717a; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+        .tab-btn:hover { color: #e5e5e5; }
+        .tab-btn.active { color: #a78bfa; border-bottom-color: #8b5cf6; }
+
+        .offers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+        .offer-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; transition: border-color 0.15s; }
+        .offer-card:hover { border-color: #3f3f46; }
+        .offer-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px; }
+        .offer-card-name { font-size: 15px; font-weight: 600; color: #fafafa; line-height: 1.3; }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+        .status-badge.draft { background: rgba(107,114,128,0.2); color: #9ca3af; }
+        .status-badge.published { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .status-badge.archived { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .offer-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+        .trigger-summary { font-size: 12px; color: #71717a; }
+        .type-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
+        .type-badge.add_product { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .type-badge.warranty { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .type-badge.discount_code { background: rgba(234,179,8,0.15); color: #eab308; }
+        .offer-card-stats { display: flex; gap: 20px; margin-bottom: 14px; }
+        .offer-stat { flex: 1; }
+        .offer-stat-label { font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .offer-stat-value { font-size: 18px; font-weight: 700; color: #fafafa; }
+        .offer-stat-value.revenue { color: #22c55e; }
+        .offer-progress-bar { height: 3px; background: #27272a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+        .offer-progress-fill { height: 100%; background: linear-gradient(90deg, #8b5cf6, #a78bfa); border-radius: 2px; transition: width 0.3s; }
+        .offer-card-actions { display: flex; gap: 6px; padding-top: 12px; border-top: 1px solid #27272a; }
+        .btn-icon { background: none; border: 1px solid #3f3f46; color: #71717a; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+        .btn-icon:hover { background: #27272a; color: #e5e5e5; }
+        .btn-icon.danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+        .btn-icon.ab-btn { color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+        .btn-icon.ab-btn:hover { background: rgba(139,92,246,0.1); }
 
         .empty-offers { text-align: center; padding: 60px 40px; }
         .empty-icon { margin-bottom: 16px; color: #3f3f46; }
         .empty-offers h3 { font-size: 18px; font-weight: 600; color: #fafafa; margin-bottom: 8px; }
         .empty-offers p { color: #71717a; margin-bottom: 24px; font-size: 14px; }
 
-        .offers-table-wrap { background: #18181b; border: 1px solid #27272a; border-radius: 12px; overflow: hidden; }
-        .offers-table { width: 100%; border-collapse: collapse; }
-        .offers-table th { text-align: left; padding: 14px 16px; font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #27272a; background: #1f1f28; }
-        .offers-table td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #27272a; vertical-align: middle; }
-        .offers-table tr:last-child td { border-bottom: none; }
-        .offers-table tr:hover td { background: #1f1f28; }
-        .inactive-row td { opacity: 0.5; }
-        .offer-name-cell { display: flex; align-items: center; gap: 8px; }
-        .offer-name { font-weight: 500; color: #e5e5e5; }
-        .ab-indicator { background: rgba(139,92,246,0.2); color: #a78bfa; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
-        .type-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
-        .type-badge.add_product { background: rgba(139,92,246,0.15); color: #a78bfa; }
-        .type-badge.warranty { background: rgba(34,197,94,0.15); color: #22c55e; }
-        .type-badge.discount_code { background: rgba(234,179,8,0.15); color: #eab308; }
-        .trigger-cell { display: flex; align-items: center; gap: 6px; }
-        .trigger-tag { background: #27272a; color: #71717a; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
-        .rate-cell { font-weight: 600; color: #a78bfa; }
-        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
-        .status-badge.active { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .status-badge.paused { background: rgba(239,68,68,0.12); color: #ef4444; }
-        .action-btns { display: flex; gap: 8px; }
-        .btn-action { background: none; border: 1px solid #3f3f46; color: #a1a1aa; padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 4px; }
-        .btn-action:hover { background: #27272a; color: #e5e5e5; }
-        .btn-action.danger { color: #ef4444; border-color: rgba(239,68,68,0.3); }
-        .btn-action.danger:hover { background: rgba(239,68,68,0.1); }
-        .btn-action.ab-btn { color: #a78bfa; border-color: rgba(139,92,246,0.3); }
-        .btn-action.ab-btn:hover { background: rgba(139,92,246,0.1); }
-
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(4px); }
-        .modal { background: #18181b; border: 1px solid #27272a; border-radius: 16px; width: 720px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+        .modal { background: #18181b; border: 1px solid #27272a; border-radius: 16px; max-height: 90vh; overflow-y: auto; }
+        .wide-modal { width: 900px; max-width: 95vw; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #27272a; }
         .modal-header h2 { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0; }
+        .modal-header-actions { display: flex; align-items: center; gap: 10px; }
         .modal-close { background: none; border: none; color: #71717a; cursor: pointer; padding: 4px; border-radius: 6px; }
         .modal-close:hover { background: #27272a; color: #fafafa; }
         .modal-body { padding: 24px; }
@@ -895,11 +867,13 @@ export default function OfferBuilder({ store, appConfig }) {
         .step-dot.active span { background: #8b5cf6; color: #fff; }
 
         .builder-form { padding: 24px; }
-        .step-content { min-height: 300px; }
+        .step-content { min-height: 400px; }
         .step-title { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0 0 4px; }
         .step-desc { color: #71717a; font-size: 14px; margin: 0 0 24px; }
 
         .form-group { margin-bottom: 20px; }
+        .form-row { display: flex; gap: 16px; }
+        .form-row .form-group { flex: 1; }
         .form-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #a1a1aa; margin-bottom: 8px; }
         .optional { color: #52525b; font-weight: 400; }
         .form-input { width: 100%; padding: 10px 14px; background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; color: #fafafa; font-size: 14px; transition: border-color 0.15s; }
@@ -908,26 +882,12 @@ export default function OfferBuilder({ store, appConfig }) {
         textarea.form-input { resize: vertical; min-height: 80px; }
         .form-hint { display: block; margin-top: 6px; font-size: 12px; color: #52525b; }
 
-        .fallback-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .targeting-section { background: rgba(255,255,255,0.02); border: 1px solid #27272a; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+        .targeting-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 
-        .type-selector { display: flex; flex-direction: column; gap: 12px; }
-        .type-option { display: flex; align-items: center; gap: 16px; padding: 16px; background: #0f0f14; border: 2px solid #27272a; border-radius: 10px; cursor: pointer; transition: all 0.15s; }
-        .type-option:hover { border-color: #3f3f46; }
-        .type-option.selected { border-color: #8b5cf6; background: rgba(139,92,246,0.08); }
-        .type-icon { width: 44px; height: 44px; border-radius: 10px; background: #27272a; display: flex; align-items: center; justify-content: center; color: #a78bfa; flex-shrink: 0; }
-        .type-icon.warranty-icon { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .type-option.selected .type-icon { background: rgba(139,92,246,0.2); }
-        .type-info { flex: 1; }
-        .type-name { font-size: 14px; font-weight: 600; color: #fafafa; margin-bottom: 2px; }
-        .type-desc { font-size: 13px; color: #71717a; }
-        .type-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #3f3f46; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .type-option.selected .type-radio { border-color: #8b5cf6; }
-        .radio-dot { width: 10px; height: 10px; border-radius: 50%; background: #8b5cf6; }
+        .fallback-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; }
 
-        .type-specific-fields { background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 16px; }
-        .warranty-fields { border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.03); }
-
-        .toggle-label { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .toggle-label { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 0; }
         .toggle-label span { font-size: 14px; color: #a1a1aa; }
         .toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
         .toggle input { opacity: 0; width: 0; height: 0; }
@@ -936,39 +896,27 @@ export default function OfferBuilder({ store, appConfig }) {
         .toggle input:checked + .toggle-slider { background: #8b5cf6; }
         .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
 
-        /* Preview link */
+        /* Content editor layout */
+        .content-editor { display: flex; gap: 24px; }
+        .content-editor-left { flex: 1; min-width: 0; }
+        .content-editor-right { width: 300px; flex-shrink: 0; }
+
+        .upsell-type-selector { display: flex; gap: 8px; margin-bottom: 24px; }
+        .upsell-type-btn { display: flex; align-items: center; gap: 6px; background: #0f0f14; border: 2px solid #27272a; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #71717a; cursor: pointer; transition: all 0.15s; }
+        .upsell-type-btn:hover { border-color: #3f3f46; color: #e5e5e5; }
+        .upsell-type-btn.active { border-color: #8b5cf6; background: rgba(139,92,246,0.1); color: #a78bfa; }
+
+        .type-fields { background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .warranty-fields { border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.03); }
+
+        .urgency-options { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .urgency-title { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
         .preview-link-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; }
         .preview-link-row { display: flex; gap: 8px; }
         .preview-link-input { flex: 1; font-size: 12px; color: #71717a; }
         .btn-copy { background: #27272a; border: 1px solid #3f3f46; color: #e5e5e5; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
         .btn-copy:hover { background: #3f3f46; }
-
-        /* Live Preview */
-        .live-preview-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #27272a; }
-        .preview-label { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-        .live-preview { background: #f5f5f5; border-radius: 10px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .preview-store-header { background: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #333; border-bottom: 1px solid #eee; }
-        .preview-offer-type-badge { margin-left: auto; background: #f3f4f6; color: #666; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
-        .preview-body { padding: 16px; background: #f8f8f8; }
-        .preview-offer-badges { display: flex; gap: 6px; margin-bottom: 12px; }
-        .preview-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
-        .preview-badge.one-time { background: #fef3c7; color: #92400e; }
-        .preview-badge.social { background: #f0fdf4; color: #166534; }
-        .preview-thanks { font-size: 15px; font-weight: 700; color: #333; margin-bottom: 12px; }
-        .preview-offer-card { background: #fff; border-radius: 8px; padding: 14px; display: flex; gap: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 12px; }
-        .preview-product-img { width: 60px; height: 60px; background: linear-gradient(135deg, #e8d5ff, #d0b8ff); border-radius: 6px; flex-shrink: 0; }
-        .preview-product-info { flex: 1; }
-        .preview-headline { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 4px; }
-        .preview-message { font-size: 12px; color: #666; margin-bottom: 6px; line-height: 1.4; }
-        .preview-price { font-size: 18px; font-weight: 700; color: #22c55e; }
-        .preview-warranty { display: flex; gap: 12px; }
-        .preview-warranty-icon { width: 48px; height: 48px; background: #dcfce7; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #22c55e; flex-shrink: 0; }
-        .preview-discount { display: flex; gap: 12px; }
-        .preview-discount-icon { width: 48px; height: 48px; background: rgba(139,92,246,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #8b5cf6; flex-shrink: 0; }
-        .preview-discount-code { font-size: 13px; font-weight: 700; color: #8b5cf6; background: #f5f3ff; padding: 4px 10px; border-radius: 4px; display: inline-block; margin-top: 4px; }
-        .preview-btn-green { background: #22c55e; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; margin-bottom: 8px; }
-        .preview-skip { font-size: 12px; color: #999; text-align: center; margin-bottom: 10px; }
-        .preview-trust { display: flex; justify-content: center; gap: 6px; font-size: 10px; color: #9ca3af; }
 
         .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #27272a; }
         .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px; color: #71717a; }

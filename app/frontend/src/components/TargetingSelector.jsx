@@ -1,0 +1,255 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../api/index.js';
+
+/**
+ * TargetingSelector — reusable component for include/exclude targeting fields.
+ * Each instance can be configured as "include" or "exclude" mode.
+ *
+ * Supports three field types:
+ * - products: searchable multi-select with image thumbnails
+ * - collections: dropdown select
+ * - tags: tag/chip input
+ *
+ * Usage: <TargetingSelector mode="include" field="products" values={[]} onChange={} />
+ */
+export default function TargetingSelector({ mode = 'include', field, values = [], onChange, label }) {
+  const [expanded, setExpanded] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [allItems, setAllItems] = useState([]);
+
+  const sectionLabel = mode === 'include' ? 'Target' : 'Exclude';
+  const fieldLabel = label || `${sectionLabel} ${field.charAt(0).toUpperCase() + field.slice(1)}`;
+
+  const modeColor = mode === 'include' ? '#8b5cf6' : '#ef4444';
+  const modeBg = mode === 'include' ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
+  const modeBorder = mode === 'include' ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
+
+  // Debounced search for products
+  useEffect(() => {
+    if (field !== 'products' || !modalOpen) return;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await api.searchShopifyProducts(searchQuery, 50);
+        setSearchResults(res.products || res || []);
+      } catch (e) {
+        console.error(e);
+        setSearchResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, field, modalOpen]);
+
+  // Fetch collections and tags once when modal opens
+  useEffect(() => {
+    if (!modalOpen) return;
+    if (field === 'collections') {
+      api.getShopifyCollections().then(res => setAllItems(res.collections || res || [])).catch(() => setAllItems([]));
+    } else if (field === 'tags') {
+      api.getShopifyProductTags().then(res => setAllItems(res.tags || res || [])).catch(() => setAllItems([]));
+    }
+  }, [field, modalOpen]);
+
+  function handleAdd(item) {
+    if (!values.find(v => v.id === item.id || v === item)) {
+      onChange([...values, item]);
+    }
+    setSearchQuery('');
+  }
+
+  function handleRemove(item) {
+    onChange(values.filter(v => v.id !== item.id && v !== item));
+  }
+
+  function renderValue(item) {
+    if (field === 'products') {
+      return (
+        <span className="target-chip">
+          {item.image && <img src={item.image} alt="" className="chip-thumb" />}
+          <span>{item.title || item.name}</span>
+          <button type="button" className="chip-remove" onClick={() => handleRemove(item)}>×</button>
+        </span>
+      );
+    }
+    if (field === 'collections') {
+      return (
+        <span className="target-chip">
+          <span>{item.title || item.name}</span>
+          <button type="button" className="chip-remove" onClick={() => handleRemove(item)}>×</button>
+        </span>
+      );
+    }
+    // tags — item is a string
+    return (
+      <span className="target-chip tag-chip">
+        <span>{item}</span>
+        <button type="button" className="chip-remove" onClick={() => handleRemove(item)}>×</button>
+      </span>
+    );
+  }
+
+  return (
+    <div className="targeting-selector" style={{ borderColor: modeBorder, background: modeBg }}>
+      <div className="targeting-header" onClick={() => setExpanded(!expanded)}>
+        <div className="targeting-header-left">
+          <svg viewBox="0 0 24 24" fill="none" stroke={modeColor} strokeWidth="2" width="14" height="14"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0)', transition: '0.2s' }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <span className="targeting-label" style={{ color: modeColor }}>{fieldLabel}</span>
+          {values.length > 0 && (
+            <span className="targeting-count" style={{ background: modeColor }}>{values.length}</span>
+          )}
+        </div>
+        <span className="targeting-expand-hint">{expanded ? 'Collapse' : 'Expand'}</span>
+      </div>
+
+      {expanded && (
+        <div className="targeting-body">
+          {values.length > 0 && (
+            <div className="targeting-chips">
+              {values.map((item, i) => (
+                <React.Fragment key={item.id || item}>{renderValue(item)}</React.Fragment>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn-add-target"
+            style={{ color: modeColor, borderColor: modeBorder }}
+            onClick={() => setModalOpen(true)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add
+          </button>
+        </div>
+      )}
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={() => setModalOpen(false)}>
+          <div className="modal target-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{fieldLabel}</h2>
+              <button className="modal-close" onClick={() => setModalOpen(false)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {field === 'products' && (
+                <>
+                  <input
+                    className="form-input search-input"
+                    type="text"
+                    placeholder="Search products..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="target-list">
+                    {loading && <div className="target-loading">Searching...</div>}
+                    {!loading && searchResults.length === 0 && searchQuery && (
+                      <div className="target-empty">No products found for "{searchQuery}"</div>
+                    )}
+                    {!loading && searchResults.length === 0 && !searchQuery && (
+                      <div className="target-empty">Start typing to search products</div>
+                    )}
+                    {searchResults.map(item => {
+                      const alreadyAdded = values.find(v => v.id === item.id);
+                      return (
+                        <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
+                          onClick={() => !alreadyAdded && handleAdd(item)}>
+                          {item.image && <img src={item.image} alt="" className="target-thumb" />}
+                          <div className="target-info">
+                            <div className="target-name">{item.title}</div>
+                            {item.variants && item.variants[0] && (
+                              <div className="target-price">${parseFloat(item.variants[0].price || 0).toFixed(2)}</div>
+                            )}
+                          </div>
+                          {alreadyAdded && <span className="target-added-check">✓</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {field === 'collections' && (
+                <div className="target-list">
+                  {allItems.length === 0 && <div className="target-empty">No collections found</div>}
+                  {allItems.map(item => {
+                    const alreadyAdded = values.find(v => v.id === item.id);
+                    return (
+                      <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
+                        onClick={() => !alreadyAdded && handleAdd(item)}>
+                        <div className="target-info">
+                          <div className="target-name">{item.title}</div>
+                        </div>
+                        {alreadyAdded && <span className="target-added-check">✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {field === 'tags' && (
+                <div className="target-list">
+                  {allItems.length === 0 && <div className="target-empty">No tags found</div>}
+                  {allItems.filter(t => !values.includes(t)).map(tag => (
+                    <div key={tag} className="target-item" onClick={() => handleAdd(tag)}>
+                      <div className="target-info"><div className="target-name">{tag}</div></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .targeting-selector { border: 1px solid; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+        .targeting-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
+        .targeting-header-left { display: flex; align-items: center; gap: 8px; }
+        .targeting-label { font-size: 13px; font-weight: 600; }
+        .targeting-count { color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
+        .targeting-expand-hint { font-size: 11px; color: #52525b; }
+        .targeting-body { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .targeting-chips { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+
+        .target-chip { display: inline-flex; align-items: center; gap: 6px; background: #27272a; border: 1px solid #3f3f46; padding: 3px 8px; border-radius: 6px; font-size: 12px; color: #e5e5e5; }
+        .target-chip.tag-chip { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.3); color: #a78bfa; }
+        .chip-thumb { width: 18px; height: 18px; border-radius: 3px; object-fit: cover; }
+        .chip-remove { background: none; border: none; color: #71717a; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+        .chip-remove:hover { color: #ef4444; }
+
+        .btn-add-target { display: inline-flex; align-items: center; gap: 4px; background: none; border: 1px dashed; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+        .btn-add-target:hover { background: rgba(255,255,255,0.05); }
+
+        .target-modal { width: 520px; max-height: 70vh; }
+        .search-input { margin-bottom: 12px; }
+        .target-list { max-height: 400px; overflow-y: auto; }
+        .target-loading, .target-empty { text-align: center; padding: 24px; color: #52525b; font-size: 13px; }
+        .target-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; border-radius: 8px; transition: background 0.15s; }
+        .target-item:hover { background: #27272a; }
+        .target-item.added { opacity: 0.5; cursor: default; }
+        .target-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+        .target-info { flex: 1; }
+        .target-name { font-size: 13px; font-weight: 500; color: #e5e5e5; }
+        .target-price { font-size: 12px; color: #71717a; margin-top: 2px; }
+        .target-added-check { color: #22c55e; font-size: 16px; }
+      `}</style>
+    </div>
+  );
+}
