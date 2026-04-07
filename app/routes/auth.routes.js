@@ -162,8 +162,9 @@ router.get('/partners-start', async (req, res) => {
 
   // Build Shopify OAuth authorize URL
   const apiKey = process.env.SHOPIFY_API_KEY;
-  const appUrl = (process.env.APP_URL || 'https://revenuepulse-production.up.railway.app')
-    .replace(/^http:\/\//, 'https://');
+  // Normalize APP_URL to always have https://
+  let rawAppUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+  const appUrl = rawAppUrl.match(/^https?:\/\//) ? rawAppUrl : `https://${rawAppUrl}`;
   const scopes = 'read_orders,read_products,read_analytics';
   const redirectUri = `${appUrl}/api/auth/callback`;
   const state = uuidv4(); // CSRF token
