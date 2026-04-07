@@ -6,8 +6,6 @@ function getShopHeader() {
   return shop ? { 'X-Shopify-Shop-Domain': shop } : {};
 }
 
-// Extract OAuth params from URL when merchant installs via Partners Dashboard
-// Shopify sends: ?hmac=...&host=...&shop=...&timestamp=...
 function getOAuthParams() {
   const params = new URLSearchParams(window.location.search);
   const hmac = params.get('hmac');
@@ -39,24 +37,15 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   // Auth
-  // For Partners Dashboard install flow: pass OAuth params from URL so backend
-  // can verify HMAC and complete OAuth token exchange. For session token flow
-  // (embedded), pass sessionToken in body.
-  // verifySession: looks up the authenticated store.
-  // For Partners Dashboard install flow with OAuth params in URL, pass no args
-  //   and the backend verifies HMAC and provisions the store.
-  // For post-OAuth callback (store already installed), pass storeId to look up
-  //   by ID without needing OAuth params.
-  // For embedded/session-token flow, pass null.
   verifySession: (storeId = null) => {
     const oAuthParams = getOAuthParams();
     let body;
     if (oAuthParams) {
-      body = JSON.stringify(oAuthParams); // Partners Dashboard install
+      body = JSON.stringify(oAuthParams);
     } else if (storeId) {
-      body = JSON.stringify({ storeId }); // Post-OAuth callback
+      body = JSON.stringify({ storeId });
     } else {
-      body = JSON.stringify({ sessionToken: null }); // Embedded/session token
+      body = JSON.stringify({ sessionToken: null });
     }
     return apiFetch('/api/auth/session/verify', {
       method: 'POST',
@@ -65,51 +54,59 @@ export const api = {
     });
   },
 
-  // Revenue
-  getSummary: (days = 30) => apiFetch(`/api/revenue/summary?days=${days}`),
-  getDaily: (days = 30) => apiFetch(`/api/revenue/daily?days=${days}`),
-  getLatest: () => apiFetch('/api/revenue/latest'),
-  seedData: () => apiFetch('/api/revenue/seed', { method: 'POST' }),
+  // App Bridge Config
+  getAppBridgeConfig: () => apiFetch('/api/app-bridge-config'),
 
-  // Billing
+  // --- UPSELL OFFERS ---
+  // GET /api/upsell/offers — list all offers
+  getUpsellOffers: () => apiFetch('/api/upsell/offers'),
+
+  // POST /api/upsell/offers — create offer
+  createUpsellOffer: (data) => apiFetch('/api/upsell/offers', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+
+  // GET /api/upsell/offers/:id — get single offer
+  getUpsellOffer: (id) => apiFetch(`/api/upsell/offers/${id}`),
+
+  // PUT /api/upsell/offers/:id — update offer
+  updateUpsellOffer: (id, data) => apiFetch(`/api/upsell/offers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+
+  // DELETE /api/upsell/offers/:id — delete offer
+  deleteUpsellOffer: (id) => apiFetch(`/api/upsell/offers/${id}`, { method: 'DELETE' }),
+
+  // --- UPSELL STOREFRONT ---
+  // GET /api/upsell/check/:order_id — check if order qualifies for upsell
+  checkUpsellOffer: (orderId) => apiFetch(`/api/upsell/check/${orderId}`),
+
+  // POST /api/upsell/accept — accept upsell
+  acceptUpsellOffer: (data) => apiFetch('/api/upsell/accept', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+
+  // POST /api/upsell/decline — decline upsell
+  declineUpsellOffer: (data) => apiFetch('/api/upsell/decline', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+
+  // --- DASHBOARD ---
+  // GET /api/dashboard/stats — conversion stats
+  getDashboardStats: () => apiFetch('/api/dashboard/stats'),
+
+  // GET /api/dashboard/recent — recent responses (last 5)
+  getDashboardRecent: () => apiFetch('/api/dashboard/recent'),
+
+  // --- BILLING ---
   getPlans: () => apiFetch('/api/billing/plans'),
   getPlan: () => apiFetch('/api/billing/plan'),
   updatePlan: (plan) => apiFetch('/api/billing/plan', {
     method: 'POST',
     body: JSON.stringify({ plan })
   }),
-
-  // App Bridge Config
-  getAppBridgeConfig: () => apiFetch('/api/app-bridge-config'),
-
-  // Upsell offers
-  getUpsellOffers: () => apiFetch('/api/upsell/offers'),
-  createUpsellOffer: (data) => apiFetch('/api/upsell/offers', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  updateUpsellOffer: (id, data) => apiFetch(`/api/upsell/offer/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  deleteUpsellOffer: (id) => apiFetch(`/api/upsell/offer/${id}`, { method: 'DELETE' }),
-  getUpsellResponses: () => apiFetch('/api/upsell/responses'),
-
-  // Upsell config
-  getUpsellConfig: () => apiFetch('/api/upsell/config'),
-  saveUpsellConfig: (upsell_config) => apiFetch('/api/upsell/config', {
-    method: 'POST',
-    body: JSON.stringify({ upsell_config })
-  }),
-
-  // Upsell offer check (for storefront)
-  checkUpsellOffer: (orderId, shop) => apiFetch(`/api/upsell?order_id=${orderId}&shop=${encodeURIComponent(shop)}`),
-  acceptUpsellOffer: (data) => apiFetch('/api/upsell/accept', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  declineUpsellOffer: (data) => apiFetch('/api/upsell/decline', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  })
 };
