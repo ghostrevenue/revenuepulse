@@ -1,0 +1,46 @@
+# Checkout Post-Purchase Extension Configuration
+# RevenuePulse - Post-Purchase Upsell Engine
+
+name: checkout-post-purchase
+version: 1.0.0
+
+# Extension type - checkout UI extension
+type: checkout_ui
+
+# The Shopify API version to use
+api_version: 2024-01
+
+# Extension points - this extension renders on the order confirmation page
+extension_points:
+  - checkout.brand
+
+# Configuration for the extension
+configuration:
+  name: RevenuePulse Upsell
+  description: Display personalized upsell offers after checkout
+  fields:
+    - key: headline
+      name: Headline
+      type: single_line_text_field
+      required: false
+      description: Custom headline for the upsell modal
+    - key: primary_color
+      name: Primary Color
+      type: single_line_text_field
+      required: false
+      description: Primary color for the CTA button (hex code)
+    - key: auto_show
+      name: Auto Show
+      type: boolean
+      required: false
+      description: Automatically show upsell offer after page load
+
+# Access scopes required by this extension
+access_scopes:
+  - read_orders
+  - write_orders
+
+# Pixel dimensions (for App Store listing)
+meta:
+ px_width: 1200
+  px_height: 800
