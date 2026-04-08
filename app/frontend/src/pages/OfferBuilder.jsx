@@ -107,6 +107,13 @@ export default function OfferBuilder({ store, appConfig }) {
       one_time_offer: true,
       confirmation_only: true,
       fallback_offer_id: '',
+      // Offer Content fields (used by openEditMainContent / handleEditorSave)
+      badge_text: 'One-time offer',
+      badge_color: '#8b5cf6',
+      show_badge: true,
+      show_timer: false,
+      timer_minutes: 15,
+      button_text: '',
     };
   }
 
@@ -800,7 +807,7 @@ export default function OfferBuilder({ store, appConfig }) {
               <div className="flow-builder-section">
                 <div className="flow-builder-row">
                   <div className="flow-node-wrapper trigger-node-wrapper">
-                    <div className="flow-node-card-full trigger-node-card" onClick={() => {}}>
+                    <div className="flow-node-card-full trigger-node-card" onClick={() => setStep(1)}>
                       <div className="flow-node-accent trigger-accent"></div>
                       <div className="flow-node-content">
                         <div className="flow-node-icon">
@@ -1739,7 +1746,7 @@ export default function OfferBuilder({ store, appConfig }) {
           display: flex;
           gap: 16px;
           width: 100%;
-          align-items: flex-start;
+          align-items: stretch;
         }
 
         /* Branch column */
