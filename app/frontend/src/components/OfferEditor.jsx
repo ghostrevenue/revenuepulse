@@ -17,9 +17,33 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
   const pathBg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
   const pathBorder = isUpsell ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
 
-  // --- ALL useState at top (Rules of Hooks: no early return before hooks) ---
-  const [form, setForm] = useState(null);
-  const [initialized, setInitialized] = useState(false);
+  // Initialize form synchronously from item — no async, no early return guard.
+  // This ensures all hooks run in the same order on every render (React 19 requirement).
+  const [form, setForm] = useState(() => item ? {
+    id: item.id || generateId(),
+    offer_type: item.offer_type || 'add_product',
+    headline: item.headline || 'Wait! Add this to your order',
+    message: item.message || 'Get it delivered with your current order — just one click away.',
+    product_id: item.product_id || '',
+    product_title: item.product_title || '',
+    product_price: item.product_price || '',
+    product_image: item.product_image || '',
+    variant_id: item.variant_id || '',
+    variant_options: item.variant_options || [],
+    variant_title: item.variant_title || '',
+    discount_code: item.discount_code || '',
+    discount_percent: item.discount_percent || '',
+    warranty_price: item.warranty_price || '',
+    warranty_description: item.warranty_description || '',
+    warranty_covered: item.warranty_covered || '',
+    badge_text: item.badge_text || 'One-time offer',
+    badge_color: item.badge_color || '#8b5cf6',
+    show_badge: item.show_badge !== undefined ? item.show_badge : true,
+    show_timer: item.show_timer || false,
+    timer_minutes: item.timer_minutes || 15,
+    button_text: item.button_text || '',
+  } : null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -33,55 +57,19 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
     timer: true,
   });
 
-  // Initialize form from item (runs after mount, before first paint)
-  useEffect(() => {
-    if (!item) return;
-    setForm({
-      id: item.id || generateId(),
-      offer_type: item.offer_type || 'add_product',
-      headline: item.headline || 'Wait! Add this to your order',
-      message: item.message || 'Get it delivered with your current order — just one click away.',
-      // Product
-      product_id: item.product_id || '',
-      product_title: item.product_title || '',
-      product_price: item.product_price || '',
-      product_image: item.product_image || '',
-      variant_id: item.variant_id || '',
-      variant_options: item.variant_options || [],
-      variant_title: item.variant_title || '',
-      // Discount
-      discount_code: item.discount_code || '',
-      discount_percent: item.discount_percent || '',
-      // Warranty
-      warranty_price: item.warranty_price || '',
-      warranty_description: item.warranty_description || '',
-      warranty_covered: item.warranty_covered || '',
-      // Badge
-      badge_text: item.badge_text || 'One-time offer',
-      badge_color: item.badge_color || '#8b5cf6',
-      show_badge: item.show_badge !== undefined ? item.show_badge : true,
-      // Timer
-      show_timer: item.show_timer || false,
-      timer_minutes: item.timer_minutes || 15,
-      // Button
-      button_text: item.button_text || '',
-    });
-    setInitialized(true);
-  }, [item?.id]);
-
-  // Guard: don't render until initialized — but hooks are already declared above ✓
-  if (!initialized || !form) {
+  // Guard against null item — render empty state, all hooks still run
+  if (!item) {
     return (
       <div className="offer-editor-overlay" onClick={onClose}>
         <div className="offer-editor-panel" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ color: '#71717a' }}>Loading...</div>
+          <div style={{ color: '#71717a' }}>No item selected</div>
         </div>
       </div>
     );
   }
 
   function updateField(key, value) {
-    setForm(f => ({ ...f, [key]: value }));
+    setForm(f => f ? ({ ...f, [key]: value }) : null);
   }
 
   function toggleSection(key) {
