@@ -29,33 +29,17 @@ jobs:
           SHOPIFY_API_KEY: ${{ secrets.SHOPIFY_API_KEY }}
           SHOPIFY_API_SECRET: ${{ secrets.SHOPIFY_API_SECRET }}
         run: |
-          # Detect available services by running railway up and capturing the error
           echo "Detecting available Railway services..."
           ERROR_OUTPUT=$(railway up 2>&1)
           echo "Railway output: $ERROR_OUTPUT"
-
-          # Extract first service name from error — Railway outputs "Multiple services found: [app, web, api]"
-          SERVICE_NAME=$(echo "$ERROR_OUTPUT" | python3 -c "
-import sys, re
-data = sys.stdin.read()
-m = re.search(r'Multiple services found: \[([^\]]+)\]', data)
-if m:
-    services = m.group(1).split(',')
-    print(services[0].strip())
-")
-
+          SERVICE_NAME=$(echo "$ERROR_OUTPUT" | python3 -c 'import sys, re; data = sys.stdin.read(); m = re.search(r"Multiple services found: \[([^\]]+)\]", data); print(m.group(1).split(",")[0].strip()) if m else None')
           if [ -z "$SERVICE_NAME" ]; then
-            # Fallback: try common service names in order
             for SVC in app web api main; do
               echo "Trying service: $SVC"
-              if railway up --service "$SVC" 2>&1; then
-                echo "Deployed to: $SVC"
-                exit 0
-              fi
+              railway up --service "$SVC" && exit 0
             done
             echo "Could not determine service name."
             exit 1
-          else
-            echo "Detected service: $SERVICE_NAME"
-            railway up --service "$SERVICE_NAME"
           fi
+          echo "Detected service: $SERVICE_NAME"
+          railway up --service "$SERVICE_NAME"
