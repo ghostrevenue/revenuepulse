@@ -53,7 +53,8 @@ export default function OfferBuilder({ store, appConfig }) {
   const [typeFilter, setTypeFilter] = useState('all');
 
   // Editor state
-  const [editingItem, setEditingItem] = useState(null); // { item, pathType }
+  const [editingItem, setEditingItem] = useState(null); // { item, pathType, isMainContent }
+  const [editingMainContent, setEditingMainContent] = useState(false); // editing headline/message/timer
 
   // Stable refs for callbacks (prevents stale closure / immediate re-render issues)
   const editingItemRef = useRef(editingItem);
@@ -216,6 +217,7 @@ export default function OfferBuilder({ store, appConfig }) {
     setStep(1);
     setForm(getDefaultForm());
     setEditingItem(null);
+    setEditingMainContent(false);
   }
 
   // ── Accept Path item management ────────────────────────────────────────────
@@ -243,8 +245,25 @@ export default function OfferBuilder({ store, appConfig }) {
 
   const openEditAcceptItem = useCallback((itemId) => {
     const item = formRef.current.accept_path_items.find(i => i.id === itemId);
-    if (item) setEditingItem({ item, pathType: 'upsell' });
+    if (item) setEditingItem({ item, pathType: 'upsell', isMainContent: false });
   }, []); // No deps — uses formRef
+
+  const openEditMainContent = useCallback(() => {
+    // Create a content item from main form fields that OfferEditor can edit
+    const contentItem = {
+      id: '__main_content__',
+      headline: formRef.current.headline,
+      message: formRef.current.message,
+      badge_text: formRef.current.badge_text,
+      badge_color: formRef.current.badge_color,
+      show_badge: formRef.current.show_badge,
+      show_timer: formRef.current.show_timer,
+      timer_minutes: formRef.current.timer_minutes,
+      button_text: formRef.current.button_text || '',
+      offer_type: 'content', // Mark as content type
+    };
+    setEditingItem({ item: contentItem, pathType: 'content', isMainContent: true });
+  }, []);
 
   // ── Decline Path item management ────────────────────────────────────────────
   function addDeclineItem() {
@@ -271,13 +290,17 @@ export default function OfferBuilder({ store, appConfig }) {
 
   const openEditDeclineItem = useCallback((itemId) => {
     const item = formRef.current.decline_path_items.find(i => i.id === itemId);
-    if (item) setEditingItem({ item, pathType: 'downsell' });
+    if (item) setEditingItem({ item, pathType: 'downsell', isMainContent: false });
   }, []); // No deps — uses formRef
 
   const handleEditorSave = useCallback((updatedItem) => {
     const current = editingItemRef.current;
     if (!current) return;
-    if (current.pathType === 'upsell') {
+    if (current.isMainContent) {
+      // Saving main offer content (headline, message, badge, timer, etc.)
+      setForm(f => ({ ...f, ...updatedItem }));
+      setEditingMainContent(false);
+    } else if (current.pathType === 'upsell') {
       updateAcceptItem(current.item.id, updatedItem);
     } else {
       updateDeclineItem(current.item.id, updatedItem);
@@ -723,7 +746,7 @@ export default function OfferBuilder({ store, appConfig }) {
         </div>
       )}
 
-      {/* ── Offer Builder Modal ─────────────────────────────────────────── */}
+      {/* ── Offer Builder Modal (n8n-style Flow Builder) ── */}
       {showForm && (
         <div className="modal-overlay" onClick={closeForm}>
           <div className="modal builder-modal super-wide-modal" onClick={e => e.stopPropagation()}>
@@ -752,615 +775,445 @@ export default function OfferBuilder({ store, appConfig }) {
               </div>
             </div>
 
-            {/* 4-Step Navigation with active/completed/pending states */}
-            <div className="steps-nav">
-              {STEP_LABELS.map((s, idx) => {
-                const isCompleted = step > s.n;
-                const isActive = step === s.n;
-                const isPending = step < s.n;
-                return (
-                  <div key={s.n} className={`step-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''} ${isPending ? 'pending' : ''}`}>
-                    <div className="step-circle">
-                      {isCompleted ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" width="12" height="12">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      ) : (
-                        <span>{s.n}</span>
-                      )}
-                    </div>
-                    <span className="step-label">{s.label}</span>
-                    {idx < STEP_LABELS.length - 1 && <div className={`step-connector ${step > s.n ? 'filled' : ''}`} />}
-                  </div>
-                );
-              })}
-            </div>
+            {/* SVG marker definitions for arrowheads */}
+            <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+              <defs>
+                <marker id="flowArrowPurple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#8b5cf6" />
+                </marker>
+                <marker id="flowArrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
+                </marker>
+                <marker id="flowArrowRed" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
+                </marker>
+                <marker id="flowArrowGray" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#71717a" />
+                </marker>
+              </defs>
+            </svg>
 
-            {/* Flow diagram: accept/decline visual at top of steps 2-3 */}
-            {step >= 2 && (
-              <div className="flow-diagram">
-                <div className="flow-trigger">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                  Order meets trigger
+            {/* Flow Builder Canvas */}
+            <div className="flow-builder-canvas">
+              {/* ── Trigger Node ── */}
+              <div className="flow-builder-section">
+                <div className="flow-builder-row">
+                  <div className="flow-node-wrapper trigger-node-wrapper">
+                    <div className="flow-node-card-full trigger-node-card" onClick={() => {}}>
+                      <div className="flow-node-accent trigger-accent"></div>
+                      <div className="flow-node-content">
+                        <div className="flow-node-icon">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                          </svg>
+                        </div>
+                        <div className="flow-node-info">
+                          <div className="flow-node-title">Trigger</div>
+                          <div className="flow-node-subtitle">
+                            {form.trigger_threshold ? `$${form.trigger_threshold}+ order` : 'All orders'}
+                            {form.first_time_customers_only && ' · First-time customers'}
+                          </div>
+                          <div className="flow-node-meta">
+                            {(form.target_products_include.length > 0 || form.target_collections_include.length > 0 || form.target_tags_include.length > 0) && (
+                              <span className="flow-meta-tag">
+                                {form.target_products_include.length > 0 && `${form.target_products_include.length} products`}
+                                {form.target_collections_include.length > 0 && ` · ${form.target_collections_include.length} collections`}
+                                {form.target_tags_include.length > 0 && ` · ${form.target_tags_include.length} tags`}
+                              </span>
+                            )}
+                            {form.target_products_exclude.length > 0 && (
+                              <span className="flow-meta-tag exclude">Excludes some products</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="flow-branch-arrow">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+
+                {/* Connector from Trigger to Content */}
+                <div className="flow-connector flow-connector-center">
+                  <svg height="32" width="20">
+                    <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#flowArrowPurple)" fill="none" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* ── Content/Offer Node ── */}
+              <div className="flow-builder-section">
+                <div className="flow-builder-row">
+                  <div className="flow-node-wrapper content-node-wrapper">
+                    <div className="flow-node-card-full content-node-card" onClick={openEditMainContent}>
+                      <div className="flow-node-accent content-accent"></div>
+                      <div className="flow-node-content">
+                        <div className="flow-node-icon">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                            <line x1="7" y1="7" x2="7.01" y2="7" />
+                          </svg>
+                        </div>
+                        <div className="flow-node-info">
+                          <div className="flow-node-title">{form.name || 'Offer Content'}</div>
+                          <div className="flow-node-subtitle">
+                            {form.headline || 'No headline set'}
+                          </div>
+                          <div className="flow-node-meta">
+                            {form.show_badge && form.badge_text && (
+                              <span className="flow-badge-tag" style={{ background: form.badge_color + '30', color: form.badge_color, borderColor: form.badge_color + '50' }}>
+                                {form.badge_text}
+                              </span>
+                            )}
+                            {form.show_timer && (
+                              <span className="flow-meta-tag timer">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                {form.timer_minutes}:00
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flow-node-edit-hint">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connector from Content to split */}
+                <div className="flow-connector flow-connector-center">
+                  <svg height="32" width="20">
+                    <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#flowArrowPurple)" fill="none" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* ── Split into Accept/Decline branches ── */}
+              <div className="flow-builder-section">
+                <div className="flow-split-indicator">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
                     <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
                   </svg>
+                  Split
                 </div>
-                <div className="flow-branches">
-                  <div className="flow-branch accept-branch">
-                    <div className="flow-branch-label">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="12" height="12">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Accept ({form.accept_path_items.length})
-                    </div>
+              </div>
+
+              {/* ── Accept & Decline Branches side by side ── */}
+              <div className="flow-branches-row">
+                {/* Accept Branch */}
+                <div className="flow-branch-column accept-column">
+                  <div className="flow-branch-header accept-branch-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="12" height="12">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Accept Path
+                    <span className="flow-branch-count">{form.accept_path_items.length}/{MAX_ITEMS}</span>
                   </div>
-                  <div className="flow-branch-or">or</div>
-                  <div className="flow-branch decline-branch">
-                    <div className="flow-branch-label">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="12" height="12">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                      Decline ({form.decline_path_items.length})
-                    </div>
+
+                  <div className="flow-branch-content">
+                    {/* Empty state */}
+                    {form.accept_path_items.length === 0 && (
+                      <div className="flow-empty-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <p>No upsells</p>
+                        <p className="flow-empty-sub">Customer accepts offer</p>
+                      </div>
+                    )}
+
+                    {/* Upsell nodes */}
+                    {form.accept_path_items.map((item, idx) => (
+                      <div key={item.id} className="flow-item-node-wrapper">
+                        {idx === 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        {idx > 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="flow-node-card-full upsell-node-card" onClick={() => openEditAcceptItem(item.id)}>
+                          <div className="flow-node-accent upsell-accent"></div>
+                          <div className="flow-node-content">
+                            <div className="flow-node-thumb">
+                              {item.product_image ? (
+                                <img src={item.product_image} alt="" />
+                              ) : (
+                                <div className="flow-node-thumb-placeholder">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flow-node-info">
+                              <div className="flow-node-title">Upsell {idx + 1}</div>
+                              <div className="flow-node-subtitle">{item.headline || 'No headline'}</div>
+                              <div className="flow-node-meta">
+                                {item.product_price && (
+                                  <span className="flow-price">+${parseFloat(item.product_price).toFixed(2)}</span>
+                                )}
+                                {item.discount_percent && (
+                                  <span className="flow-discount">{item.discount_percent}% OFF</span>
+                                )}
+                                {item.show_timer && (
+                                  <span className="flow-meta-tag timer">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    {item.timer_minutes}:00
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeAcceptItem(item.id); }}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Thank You / End node */}
+                    {form.accept_path_items.length > 0 && (
+                      <div className="flow-item-node-wrapper">
+                        <div className="flow-connector">
+                          <svg height="24" width="20">
+                            <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
+                          </svg>
+                        </div>
+                        <div className="flow-node-card-full end-node-card">
+                          <div className="flow-node-accent end-accent"></div>
+                          <div className="flow-node-content">
+                            <div className="flow-node-icon">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="16" height="16">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            </div>
+                            <div className="flow-node-info">
+                              <div className="flow-node-title" style={{ color: '#22c55e' }}>Thank You</div>
+                              <div className="flow-node-subtitle">Order confirmed</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add Upsell Button */}
+                    {form.accept_path_items.length < MAX_ITEMS && (
+                      <div className="flow-add-node-wrapper">
+                        {form.accept_path_items.length > 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        <button type="button" className="flow-add-node-btn accept-add-btn" onClick={addAcceptItem}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          Add Upsell
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flow-branch-or">·</div>
-                  <div className="flow-branch total-branch">
-                    <div className="flow-branch-label">
-                      {form.accept_path_items.length + form.decline_path_items.length}/{MAX_ITEMS} nodes
-                    </div>
+                </div>
+
+                {/* Divider */}
+                <div className="flow-branches-divider">
+                  <div className="flow-divider-line"></div>
+                  <div className="flow-divider-label">or</div>
+                  <div className="flow-divider-line"></div>
+                </div>
+
+                {/* Decline Branch */}
+                <div className="flow-branch-column decline-column">
+                  <div className="flow-branch-header decline-branch-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="12" height="12">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                    Decline Path
+                    <span className="flow-branch-count">{form.decline_path_items.length}/{MAX_ITEMS}</span>
+                  </div>
+
+                  <div className="flow-branch-content">
+                    {/* Empty state */}
+                    {form.decline_path_items.length === 0 && (
+                      <div className="flow-empty-hint decline-empty">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                        <p>No downsells</p>
+                        <p className="flow-empty-sub">Customer declines offer</p>
+                      </div>
+                    )}
+
+                    {/* Downsell nodes */}
+                    {form.decline_path_items.map((item, idx) => (
+                      <div key={item.id} className="flow-item-node-wrapper">
+                        {idx === 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        {idx > 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="flow-node-card-full downsell-node-card" onClick={() => openEditDeclineItem(item.id)}>
+                          <div className="flow-node-accent downsell-accent"></div>
+                          <div className="flow-node-content">
+                            <div className="flow-node-thumb">
+                              {item.product_image ? (
+                                <img src={item.product_image} alt="" />
+                              ) : (
+                                <div className="flow-node-thumb-placeholder">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flow-node-info">
+                              <div className="flow-node-title">Downsell {idx + 1}</div>
+                              <div className="flow-node-subtitle">{item.headline || 'No headline'}</div>
+                              <div className="flow-node-meta">
+                                {item.product_price && (
+                                  <span className="flow-price">+${parseFloat(item.product_price).toFixed(2)}</span>
+                                )}
+                                {item.discount_percent && (
+                                  <span className="flow-discount">{item.discount_percent}% OFF</span>
+                                )}
+                                {item.show_timer && (
+                                  <span className="flow-meta-tag timer">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    {item.timer_minutes}:00
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeDeclineItem(item.id); }}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* End node */}
+                    {form.decline_path_items.length > 0 && (
+                      <div className="flow-item-node-wrapper">
+                        <div className="flow-connector">
+                          <svg height="24" width="20">
+                            <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
+                          </svg>
+                        </div>
+                        <div className="flow-node-card-full end-node-card decline-end-card">
+                          <div className="flow-node-accent end-accent-red"></div>
+                          <div className="flow-node-content">
+                            <div className="flow-node-icon">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="16" height="16">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                              </svg>
+                            </div>
+                            <div className="flow-node-info">
+                              <div className="flow-node-title" style={{ color: '#ef4444' }}>End</div>
+                              <div className="flow-node-subtitle">Path complete</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add Downsell Button */}
+                    {form.decline_path_items.length < MAX_ITEMS && (
+                      <div className="flow-add-node-wrapper">
+                        {form.decline_path_items.length > 0 && (
+                          <div className="flow-connector">
+                            <svg height="24" width="20">
+                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
+                            </svg>
+                          </div>
+                        )}
+                        <button type="button" className="flow-add-node-btn decline-add-btn" onClick={addDeclineItem}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          Add Downsell
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
 
-            <form onSubmit={handleSubmit} className="builder-form">
-              {/* ── Step 1: Trigger & Targeting ── */}
-              {step === 1 && (
-                <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Set Offer Triggers & Targeting</h3>
-                  <p className="step-desc">Define when this offer appears and which customers see it.</p>
-
-                  <div className="form-group">
-                    <label className="form-label">Offer Name <span className="optional">(optional)</span></label>
-                    <input className="form-input" type="text" value={form.name}
-                      onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Summer Flash Sale" />
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Minimum Order Amount ($)</label>
-                      <input className="form-input" type="number" step="0.01" value={form.trigger_threshold}
-                        onChange={e => setForm({ ...form, trigger_threshold: e.target.value })} placeholder="50.00" />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Maximum Order Amount ($) <span className="optional">(optional)</span></label>
-                      <input className="form-input" type="number" step="0.01" value={form.trigger_threshold_max}
-                        onChange={e => setForm({ ...form, trigger_threshold_max: e.target.value })} placeholder="No max" />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="toggle-label">
-                      <span>First-time customers only</span>
-                      <label className="toggle">
-                        <input type="checkbox" checked={form.first_time_customers_only}
-                          onChange={e => setForm({ ...form, first_time_customers_only: e.target.checked })} />
-                        <span className="toggle-slider" />
-                      </label>
-                    </label>
-                  </div>
-
-                  <div className="targeting-section">
-                    <div className="targeting-section-header">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" width="14" height="14">
-                        <circle cx="12" cy="12" r="10" /><polyline points="12 8 12 12 14 14" />
-                      </svg>
-                      <span style={{ color: '#8b5cf6', fontSize: '13px', fontWeight: 600 }}>Include Targeting</span>
-                    </div>
-                    <TargetingSelector mode="include" field="products" label="Target Products"
-                      values={form.target_products_include}
-                      onChange={vals => setForm({ ...form, target_products_include: vals })} />
-                    <TargetingSelector mode="include" field="collections" label="Target Collections"
-                      values={form.target_collections_include}
-                      onChange={vals => setForm({ ...form, target_collections_include: vals })} />
-                    <TargetingSelector mode="include" field="tags" label="Target Tags"
-                      values={form.target_tags_include}
-                      onChange={vals => setForm({ ...form, target_tags_include: vals })} />
-                  </div>
-
-                  <div className="targeting-section" style={{ marginTop: '8px' }}>
-                    <div className="targeting-section-header">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" width="14" height="14">
-                        <circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                      </svg>
-                      <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: 600 }}>Exclude Targeting</span>
-                    </div>
-                    <TargetingSelector mode="exclude" field="products" label="Exclude Products"
-                      values={form.target_products_exclude}
-                      onChange={vals => setForm({ ...form, target_products_exclude: vals })} />
-                    <TargetingSelector mode="exclude" field="collections" label="Exclude Collections"
-                      values={form.target_collections_exclude}
-                      onChange={vals => setForm({ ...form, target_collections_exclude: vals })} />
-                    <TargetingSelector mode="exclude" field="tags" label="Exclude Tags"
-                      values={form.target_tags_exclude}
-                      onChange={vals => setForm({ ...form, target_tags_exclude: vals })} />
-                  </div>
-                </div>
-              )}
-
-              {/* ── Step 2: Accept Path ── */}
-              {step === 2 && (
-                <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Accept Path</h3>
-                  <p className="step-desc">
-                    Upsells appear when the customer accepts the offer. Click any offer to edit. Maximum {MAX_ITEMS} upsells.
-                  </p>
-
-                  {/* Flow Overview Mini-Diagram */}
-                  <div className="flow-overview-mini">
-                    <div className="flow-overview-title">Flow Overview</div>
-                    <div className="flow-overview-diagram">
-                      <div className="flow-overview-node checkout-node">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                        </svg>
-                        Checkout
-                      </div>
-                      <div className="flow-overview-arrow">→</div>
-                      <div className="flow-overview-node offer-node">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                          <line x1="7" y1="7" x2="7.01" y2="7" />
-                        </svg>
-                        {form.accept_path_items.length > 0 ? `Upsell 1${form.accept_path_items.length > 1 ? ` (+${form.accept_path_items.length - 1} more)` : ''}` : 'Offer'}
-                      </div>
-                      {form.accept_path_items.length > 1 && (
-                        <>
-                          <div className="flow-overview-arrow">→</div>
-                          <div className="flow-overview-node offer-node">
-                            {form.accept_path_items.length > 2 ? `... (+${form.accept_path_items.length - 2} more)` : 'Upsell 2'}
-                          </div>
-                        </>
-                      )}
-                      <div className="flow-overview-arrow flow-overview-branch-arrow">↘</div>
-                      <div className="flow-overview-node accept-node">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="12" height="12">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        Accept
-                      </div>
-                      <div className="flow-overview-arrow">→</div>
-                      <div className="flow-overview-node end-node">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        Thank You
-                      </div>
-                      <div className="flow-overview-decline-path">
-                        <div className="flow-overview-arrow decline-arrow">↘</div>
-                        <div className="flow-overview-node decline-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="12" height="12">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                          {form.decline_path_items.length > 0 ? `Downsell 1${form.decline_path_items.length > 1 ? ` (+${form.decline_path_items.length - 1} more)` : ''}` : 'Decline'}
-                        </div>
-                        {form.decline_path_items.length > 0 && (
-                          <>
-                            <div className="flow-overview-arrow decline-arrow">→</div>
-                            <div className="flow-overview-node end-node decline-end">
-                              End
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* SVG marker definitions for arrowheads */}
-                  <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-                    <defs>
-                      <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                        <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
-                      </marker>
-                      <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                        <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
-                      </marker>
-                    </defs>
+              {/* ── Targeting Summary Bar ── */}
+              <div className="flow-targeting-bar">
+                <div className="flow-targeting-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                   </svg>
-
-                  <div className="flow-canvas">
-                    {/* Empty state */}
-                    {form.accept_path_items.length === 0 && form.decline_path_items.length === 0 && (
-                      <div className="flow-empty-state">
-                        <div className="flow-trigger-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                          </svg>
-                          Order meets trigger
-                        </div>
-                        <div className="flow-trigger-connector">
-                          <svg height="32" width="20">
-                            <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
-                          </svg>
-                        </div>
-                        <div className="flow-empty-hint-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                            <line x1="7" y1="7" x2="7.01" y2="7" />
-                          </svg>
-                          <p>No offers yet</p>
-                          <p className="flow-empty-sub">Add your first upsell to get started</p>
-                        </div>
-                        <div className="flow-trigger-connector">
-                          <svg height="32" width="20">
-                            <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
-                          </svg>
-                        </div>
-                        <button type="button" className="flow-add-upsell-btn flow-add-first" onClick={addAcceptItem}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="16" height="16">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                          </svg>
-                          Add First Upsell
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Linear flow: accept path items only */}
-                    {form.accept_path_items.length > 0 && (
-                      <>
-                        {/* Trigger node at top */}
-                        <div className="flow-trigger-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                          </svg>
-                          Order meets trigger
-                        </div>
-
-                        {/* Vertical connector from trigger to first upsell */}
-                        <div className="flow-vertical-connector">
-                          <svg height="28" width="20">
-                            <path d="M10 0 L10 28" stroke="#22c55e" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
-                          </svg>
-                        </div>
-
-                        {/* Linear upsell nodes (centered, no branch column) */}
-                        <div className="flow-linear-container">
-                          {form.accept_path_items.map((item, idx) => (
-                            <div key={item.id} className="flow-linear-row">
-                              <div className="flow-node upsell-node" style={{ maxWidth: '480px', margin: '0 auto', width: '100%' }}>
-                                <div className="flow-node-header">
-                                  <span className="flow-node-label">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="10" height="10">
-                                      <polyline points="20 6 9 17 4 12" />
-                                    </svg>
-                                    Upsell {idx + 1}
-                                  </span>
-                                </div>
-                                <div className="flow-node-card">
-                                  {renderItemCard(item, 'upsell', openEditAcceptItem, removeAcceptItem)}
-                                </div>
-                              </div>
-                              {/* Connector to next or end */}
-                              {idx < form.accept_path_items.length - 1 && (
-                                <div className="flow-vertical-connector">
-                                  <svg height="28" width="20">
-                                    <path d="M10 0 L10 28" stroke="#22c55e" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
-                                  </svg>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Add Upsell button */}
-                        {form.accept_path_items.length < MAX_ITEMS && (
-                          <div className="flow-upsell-connector-row">
-                            <div className="flow-upsell-connector-line">
-                              <svg height="24" width="20">
-                                <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
-                              </svg>
-                            </div>
-                            <button type="button" className="flow-add-upsell-btn" onClick={addAcceptItem}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="16" height="16">
-                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                              </svg>
-                              Add Upsell
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Flow end indicator */}
-                        {form.accept_path_items.length > 0 && (
-                          <div className="flow-end-node">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                            </svg>
-                            End of Accept Path
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <span>Min. ${form.trigger_threshold || 0}{form.trigger_threshold_max ? ` – $${form.trigger_threshold_max}` : '+'}</span>
                 </div>
-              )}
-
-              {/* ── Step 3: Decline Path ── */}
-              {step === 3 && (
-                <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title decline-step-title">Decline Path</h3>
-                  <p className="step-desc decline-step-desc">
-                    Offer alternatives when customers decline. These offers appear when they click "No thanks".
-                  </p>
-
-                  {/* SVG marker definitions for arrowheads */}
-                  <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-                    <defs>
-                      <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                        <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
-                      </marker>
-                    </defs>
-                  </svg>
-
-                  <div className="flow-canvas decline-flow-canvas">
-                    {/* Empty state */}
-                    {form.decline_path_items.length === 0 && (
-                      <div className="flow-empty-state">
-                        <div className="flow-trigger-node decline-trigger-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                          Customer declines
-                        </div>
-                        <div className="flow-trigger-connector">
-                          <svg height="32" width="20">
-                            <path d="M10 0 L10 32" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
-                          </svg>
-                        </div>
-                        <div className="flow-empty-hint-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                            <line x1="7" y1="7" x2="7.01" y2="7" />
-                          </svg>
-                          <p>No downsells yet</p>
-                          <p className="flow-empty-sub">Add downsells for when customers decline</p>
-                        </div>
-                        <div className="flow-trigger-connector">
-                          <svg height="32" width="20">
-                            <path d="M10 0 L10 32" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
-                          </svg>
-                        </div>
-                        <button type="button" className="flow-add-downsell-btn flow-add-first" onClick={addDeclineItem}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="16" height="16">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                          </svg>
-                          Add First Downsell
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Linear flow: decline path items only */}
-                    {form.decline_path_items.length > 0 && (
-                      <>
-                        {/* Decline trigger node at top */}
-                        <div className="flow-trigger-node decline-trigger-node">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                          Customer declines
-                        </div>
-
-                        {/* Vertical connector from decline trigger to first downsell */}
-                        <div className="flow-vertical-connector">
-                          <svg height="28" width="20">
-                            <path d="M10 0 L10 28" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
-                          </svg>
-                        </div>
-
-                        {/* Linear downsell nodes (centered) */}
-                        <div className="flow-linear-container">
-                          {form.decline_path_items.map((item, idx) => (
-                            <div key={item.id} className="flow-linear-row">
-                              <div className="flow-node downsell-node" style={{ maxWidth: '480px', margin: '0 auto', width: '100%' }}>
-                                <div className="flow-node-header">
-                                  <span className="flow-node-label">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="10" height="10">
-                                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                                    </svg>
-                                    Downsell {idx + 1}
-                                  </span>
-                                </div>
-                                <div className="flow-node-card">
-                                  {renderItemCard(item, 'downsell', openEditDeclineItem, removeDeclineItem)}
-                                </div>
-                              </div>
-                              {/* Connector to next or end */}
-                              {idx < form.decline_path_items.length - 1 && (
-                                <div className="flow-vertical-connector">
-                                  <svg height="28" width="20">
-                                    <path d="M10 0 L10 28" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
-                                  </svg>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Add Downsell button */}
-                        {form.decline_path_items.length < MAX_ITEMS && (
-                          <div className="flow-upsell-connector-row">
-                            <div className="flow-upsell-connector-line">
-                              <svg height="24" width="20">
-                                <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
-                              </svg>
-                            </div>
-                            <button type="button" className="flow-add-downsell-btn" onClick={addDeclineItem}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="16" height="16">
-                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                              </svg>
-                              Add Downsell
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Flow end indicator */}
-                        {form.decline_path_items.length > 0 && (
-                          <div className="flow-end-node decline-end-node">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                            </svg>
-                            End of Decline Path
-                          </div>
-                        )}
-                      </>
-                    )}
+                {form.target_products_include.length > 0 && (
+                  <div className="flow-targeting-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <span>{form.target_products_include.length} products</span>
                   </div>
-                </div>
-              )}
-
-              {/* ── Step 4: Review & Save ── */}
-              {step === 4 && (
-                <div className="step-content" ref={stepContentRef}>
-                  <h3 className="step-title">Review & Save</h3>
-                  <p className="step-desc">Review your offer setup before saving.</p>
-
-                  <div className="review-grid">
-                    {/* Trigger Summary */}
-                    <div className="review-card">
-                      <div className="review-card-title">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" width="14" height="14">
-                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                        </svg>
-                        Trigger & Targeting
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">Name</span>
-                        <span className="review-value">{form.name || '(unnamed)'}</span>
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">Order Amount</span>
-                        <span className="review-value">
-                          ${form.trigger_threshold || 0}
-                          {form.trigger_threshold_max ? ` – $${form.trigger_threshold_max}` : '+'}
-                        </span>
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">First-time only</span>
-                        <span className="review-value">{form.first_time_customers_only ? 'Yes' : 'No'}</span>
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">Include Products</span>
-                        <span className="review-value">{form.target_products_include.length} products</span>
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">Include Collections</span>
-                        <span className="review-value">{form.target_collections_include.length} collections</span>
-                      </div>
-                      <div className="review-row">
-                        <span className="review-label">Include Tags</span>
-                        <span className="review-value">{form.target_tags_include.length} tags</span>
-                      </div>
-                    </div>
-
-                    {/* Accept Path Summary */}
-                    <div className="review-card">
-                      <div className="review-card-title" style={{ color: '#22c55e' }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="14" height="14">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        Accept Path — {form.accept_path_items.length} upsell{form.accept_path_items.length !== 1 ? 's' : ''}
-                      </div>
-                      {form.accept_path_items.length === 0 ? (
-                        <div className="review-empty">No upsell offers configured</div>
-                      ) : (
-                        form.accept_path_items.map((item, i) => (
-                          <div key={item.id} className="review-item">
-                            <span className="review-item-num">{i + 1}</span>
-                            <div className="review-item-info">
-                              <div className="review-item-headline">{item.headline}</div>
-                              <div className="review-item-meta">
-                                {item.offer_type === 'add_product' ? 'Add to Order' : item.offer_type === 'warranty' ? 'Warranty' : 'Discount'}
-                                {item.product_price ? ` · $${parseFloat(item.product_price).toFixed(2)}` : ''}
-                                {item.show_timer ? ` · ⏱ ${item.timer_minutes}min` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    {/* Decline Path Summary */}
-                    <div className="review-card">
-                      <div className="review-card-title" style={{ color: '#ef4444' }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="14" height="14">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                        Decline Path — {form.decline_path_items.length} downsell{form.decline_path_items.length !== 1 ? 's' : ''}
-                      </div>
-                      {form.decline_path_items.length === 0 ? (
-                        <div className="review-empty">No downsell offers configured</div>
-                      ) : (
-                        form.decline_path_items.map((item, i) => (
-                          <div key={item.id} className="review-item">
-                            <span className="review-item-num">{i + 1}</span>
-                            <div className="review-item-info">
-                              <div className="review-item-headline">{item.headline}</div>
-                              <div className="review-item-meta">
-                                {item.offer_type === 'add_product' ? 'Add to Order' : item.offer_type === 'warranty' ? 'Warranty' : 'Discount'}
-                                {item.product_price ? ` · $${parseFloat(item.product_price).toFixed(2)}` : ''}
-                                {item.show_timer ? ` · ⏱ ${item.timer_minutes}min` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Warning if no items */}
-                  {form.accept_path_items.length === 0 && form.decline_path_items.length === 0 && (
-                    <div className="review-warning">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
-                      This offer has no upsell or downsell items. Add at least one offer in the Accept or Decline path.
-                    </div>
-                  )}
-
-                  {editing && (
-                    <div className="form-group preview-link-group">
-                      <label className="form-label">Preview Link</label>
-                      <div className="preview-link-row">
-                        <input className="form-input preview-link-input" type="text" readOnly
-                          value={`${window.location.origin}${window.location.pathname}#/upsell-preview/${editing.id}`} />
-                        <button type="button" className="btn-copy" onClick={() => copyPreviewLink(editing.id)}>
-                          {copied ? '✓ Copied' : 'Copy Link'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Form Actions */}
-              <div className="form-actions">
-                {step > 1 && (
-                  <button type="button" className="btn-secondary" onClick={() => setStep(s => s - 1)}>Back</button>
                 )}
-                {step < 4 ? (
-                  <button type="button" className="btn-primary" onClick={() => setStep(s => s + 1)}>Continue</button>
-                ) : (
+                {form.target_collections_include.length > 0 && (
+                  <div className="flow-targeting-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                    </svg>
+                    <span>{form.target_collections_include.length} collections</span>
+                  </div>
+                )}
+                {form.first_time_customers_only && (
+                  <div className="flow-targeting-item highlight">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span>First-time only</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Form Actions ── */}
+              <form onSubmit={handleSubmit} className="flow-builder-form-actions">
+                <div className="form-actions">
+                  <button type="button" className="btn-secondary" onClick={closeForm}>Cancel</button>
                   <button type="submit" className="btn-primary">
                     {editing ? 'Update Offer' : 'Create Offer'}
                   </button>
-                )}
-              </div>
-            </form>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -1677,6 +1530,424 @@ export default function OfferBuilder({ store, appConfig }) {
         .flow-add-downsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(239,68,68,0.08); border: 2px dashed rgba(239,68,68,0.3); color: #ef4444; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .flow-add-downsell-btn:hover { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.5); }
         .flow-add-downsell-btn.flow-add-first { width: fit-content; margin: 8px auto 0; }
+
+        /* ══════════════════════════════════════════════════════════════════
+           NEW: n8n-style Flow Builder CSS
+           ══════════════════════════════════════════════════════════════════ */
+
+        /* Flow Builder Canvas - main container */
+        .flow-builder-canvas {
+          padding: 20px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          max-height: calc(90vh - 120px);
+          overflow-y: auto;
+        }
+
+        /* Builder section (groups nodes + connectors) */
+        .flow-builder-section {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0;
+        }
+
+        /* Row of nodes (centered) */
+        .flow-builder-row {
+          display: flex;
+          justify-content: center;
+          width: 100%;
+        }
+
+        /* Node wrapper (centers the card) */
+        .flow-node-wrapper {
+          display: flex;
+          justify-content: center;
+        }
+
+        /* Full node card (n8n style - wide card ~140-160px) */
+        .flow-node-card-full {
+          display: flex;
+          align-items: stretch;
+          background: #0f0f14;
+          border: 1px solid #27272a;
+          border-radius: 10px;
+          overflow: hidden;
+          cursor: pointer;
+          transition: all 0.15s;
+          width: 100%;
+          max-width: 340px;
+          min-width: 280px;
+        }
+
+        .flow-node-card-full:hover {
+          border-color: #3f3f46;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        /* Left accent bar */
+        .flow-node-accent {
+          width: 4px;
+          flex-shrink: 0;
+        }
+        .trigger-accent { background: #8b5cf6; }
+        .content-accent { background: #8b5cf6; }
+        .upsell-accent { background: #22c55e; }
+        .downsell-accent { background: #ef4444; }
+        .end-accent { background: #22c55e; }
+        .end-accent-red { background: #ef4444; }
+
+        /* Node content (icon + info) */
+        .flow-node-content {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          flex: 1;
+          min-width: 0;
+        }
+
+        /* Node icon */
+        .flow-node-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: #1f1f28;
+          flex-shrink: 0;
+          color: #a1a1aa;
+        }
+
+        /* Node info */
+        .flow-node-info {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .flow-node-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e5e5e5;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .flow-node-subtitle {
+          font-size: 12px;
+          color: #71717a;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          margin-top: 2px;
+        }
+
+        .flow-node-meta {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 4px;
+          flex-wrap: wrap;
+        }
+
+        /* Flow metadata tags */
+        .flow-meta-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: rgba(139,92,246,0.1);
+          color: #a78bfa;
+          border: 1px solid rgba(139,92,246,0.2);
+        }
+        .flow-meta-tag.exclude {
+          background: rgba(239,68,68,0.1);
+          color: #f87171;
+          border-color: rgba(239,68,68,0.2);
+        }
+        .flow-meta-tag.timer {
+          background: rgba(234,179,8,0.1);
+          color: #fbbf24;
+          border-color: rgba(234,179,8,0.2);
+        }
+
+        /* Flow price/discount */
+        .flow-price {
+          font-size: 12px;
+          font-weight: 700;
+          color: #22c55e;
+        }
+        .flow-discount {
+          font-size: 11px;
+          font-weight: 700;
+          color: #f59e0b;
+          background: rgba(245,158,11,0.1);
+          padding: 1px 5px;
+          border-radius: 4px;
+        }
+
+        /* Badge tag in node */
+        .flow-badge-tag {
+          display: inline-flex;
+          align-items: center;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 4px;
+          border: 1px solid;
+        }
+
+        /* Edit hint icon */
+        .flow-node-edit-hint {
+          color: #52525b;
+          flex-shrink: 0;
+          transition: color 0.15s;
+        }
+        .flow-node-card-full:hover .flow-node-edit-hint {
+          color: #8b5cf6;
+        }
+
+        /* Flow connector (SVG arrow) */
+        .flow-connector {
+          display: flex;
+          justify-content: center;
+        }
+        .flow-connector-center {
+          margin-left: 0;
+        }
+
+        /* Split indicator */
+        .flow-split-indicator {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #71717a;
+          padding: 8px 0;
+        }
+
+        /* Two-column branches row */
+        .flow-branches-row {
+          display: flex;
+          gap: 16px;
+          width: 100%;
+          align-items: flex-start;
+        }
+
+        /* Branch column */
+        .flow-branch-column {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          min-width: 0;
+        }
+
+        /* Branch header */
+        .flow-branch-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 8px 12px;
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+        .accept-branch-header {
+          background: rgba(34,197,94,0.08);
+          border: 1px solid rgba(34,197,94,0.2);
+          color: #22c55e;
+        }
+        .decline-branch-header {
+          background: rgba(239,68,68,0.08);
+          border: 1px solid rgba(239,68,68,0.2);
+          color: #ef4444;
+        }
+        .flow-branch-count {
+          margin-left: auto;
+          font-size: 11px;
+          opacity: 0.7;
+          font-weight: 500;
+        }
+
+        /* Branch content area */
+        .flow-branch-content {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+        }
+
+        /* Branches divider */
+        .flow-branches-divider {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 40px 12px 0;
+          flex-shrink: 0;
+        }
+        .flow-divider-line {
+          width: 1px;
+          flex: 1;
+          background: #27272a;
+          min-height: 20px;
+        }
+        .flow-divider-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: #52525b;
+          text-transform: uppercase;
+        }
+
+        /* Empty hint within branch */
+        .flow-empty-hint {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          padding: 24px 16px;
+          color: #3f3f46;
+          text-align: center;
+          border: 2px dashed rgba(34,197,94,0.2);
+          border-radius: 10px;
+          margin-bottom: 12px;
+        }
+        .flow-empty-hint.decline-empty {
+          border-color: rgba(239,68,68,0.2);
+        }
+        .flow-empty-hint svg { color: #3f3f46; }
+        .flow-empty-hint p { font-size: 13px; margin: 0; color: #71717a; }
+        .flow-empty-hint .flow-empty-sub { font-size: 11px; color: #52525b; }
+
+        /* Individual item node wrapper */
+        .flow-item-node-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0;
+        }
+
+        /* Add node button wrapper */
+        .flow-add-node-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0;
+        }
+
+        /* Add node button */
+        .flow-add-node-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          width: 100%;
+          padding: 10px 14px;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+          border: 2px dashed;
+        }
+        .accept-add-btn {
+          background: rgba(34,197,94,0.05);
+          border-color: rgba(34,197,94,0.3);
+          color: #22c55e;
+        }
+        .accept-add-btn:hover {
+          background: rgba(34,197,94,0.1);
+          border-color: rgba(34,197,94,0.5);
+        }
+        .decline-add-btn {
+          background: rgba(239,68,68,0.05);
+          border-color: rgba(239,68,68,0.3);
+          color: #ef4444;
+        }
+        .decline-add-btn:hover {
+          background: rgba(239,68,68,0.1);
+          border-color: rgba(239,68,68,0.5);
+        }
+
+        /* Thumbanil in node */
+        .flow-node-thumb {
+          width: 36px;
+          height: 36px;
+          border-radius: 6px;
+          overflow: hidden;
+          flex-shrink: 0;
+          background: #1f1f28;
+        }
+        .flow-node-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .flow-node-thumb-placeholder {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #3f3f46;
+        }
+
+        /* Remove button on node */
+        .flow-node-remove {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 24px;
+          height: 24px;
+          border-radius: 4px;
+          color: #52525b;
+          cursor: pointer;
+          transition: all 0.15s;
+          flex-shrink: 0;
+        }
+        .flow-node-remove:hover {
+          background: rgba(239,68,68,0.15);
+          color: #ef4444;
+        }
+
+        /* Targeting bar */
+        .flow-targeting-bar {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 12px 16px;
+          background: #0f0f14;
+          border: 1px solid #27272a;
+          border-radius: 10px;
+          margin-top: 16px;
+          flex-wrap: wrap;
+        }
+        .flow-targeting-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 500;
+          color: #71717a;
+        }
+        .flow-targeting-item.highlight {
+          color: #a78bfa;
+        }
+
+        /* Form actions wrapper */
+        .flow-builder-form-actions {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px solid #27272a;
+        }
       `}</style>
     </div>
   );

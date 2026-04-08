@@ -231,6 +231,7 @@ export default function Analytics({ store, appConfig }) {
   // Real chart data — keyed by period so switching periods shows correct data
   const [chartData, setChartData] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
+  const [isDemoData, setIsDemoData] = useState(false);
 
   useEffect(() => {
     if (!store) { setLoading(false); return; }
@@ -239,6 +240,7 @@ export default function Analytics({ store, appConfig }) {
 
   async function loadData() {
     setLoading(true);
+    setIsDemoData(false);
     try {
       // Fetch all real data in parallel — no fallback to mock
       const [statsRes, chartRes, offersRes, recentRes] = await Promise.all([
@@ -248,6 +250,12 @@ export default function Analytics({ store, appConfig }) {
         api.getDashboardRecent().catch(() => ({ responses: [] })),
       ]);
 
+      const hasRealStats = statsRes && (statsRes.accepts > 0 || statsRes.declines > 0 || statsRes.total_responses > 0);
+      const hasRealChart = chartRes?.chart?.length > 0;
+      if (!hasRealStats || !hasRealChart) {
+        setIsDemoData(true);
+      }
+
       if (statsRes) {
         setStats({
           total_accepts: statsRes.accepts || 0,
@@ -256,14 +264,30 @@ export default function Analytics({ store, appConfig }) {
           revenue_lifted: statsRes.total_revenue_lifted || 0,
           acceptance_rate: statsRes.acceptance_rate || 0,
         });
+      } else {
+        // Demo stats when API returns nothing
+        const demo = buildMockData(period);
+        const totalAccepted = demo.responses.filter(r => r.response === 'accepted').length;
+        const totalDeclined = demo.responses.filter(r => r.response === 'declined').length;
+        const totalRevenue = demo.responses.reduce((sum, r) => sum + (r.revenue_added || 0), 0);
+        const totalTriggered = totalAccepted + totalDeclined;
+        setStats({
+          total_accepts: totalAccepted,
+          total_declines: totalDeclined,
+          total_triggered: totalTriggered,
+          revenue_lifted: totalRevenue,
+          acceptance_rate: totalTriggered > 0 ? (totalAccepted / totalTriggered * 100).toFixed(1) : '0.0',
+        });
       }
 
       if (chartRes?.chart?.length) {
         setChartData(chartRes.chart.map(c => ({ date: c.date, accepted: c.accepted, declined: c.declined })));
         setRevenueData(chartRes.chart.map(c => ({ date: c.date, revenue: c.revenue })));
       } else {
-        setChartData([]);
-        setRevenueData([]);
+        // Fallback to demo data when no real data exists yet
+        const demo = buildMockData(period);
+        setChartData(demo.chartData);
+        setRevenueData(demo.revenueData);
       }
 
       if (offersRes?.offers?.length) {
@@ -282,7 +306,16 @@ export default function Analytics({ store, appConfig }) {
           revenue_added: r.added_revenue || 0,
         })));
       } else {
-        setRecent([]);
+        // Fallback to demo recent responses
+        const demo = buildMockData(period);
+        setRecent(demo.responses.slice(0, 10).map(r => ({
+          id: r.id,
+          order_id: r.order_id,
+          offer_name: r.offer_name,
+          response: r.response,
+          created_at: r.created_at,
+          revenue_added: r.revenue_added,
+        })));
       }
     } catch (e) {
       console.error(e);
@@ -362,6 +395,16 @@ export default function Analytics({ store, appConfig }) {
           ))}
         </div>
       </div>
+
+      {/* Demo data banner */}
+      {isDemoData && (
+        <div className="demo-data-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span><strong>Demo data</strong> — No real responses yet. This is sample data to preview what your analytics will look like. Connect your store and publish an offer to start seeing real results.</span>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="kpi-grid">
@@ -546,6 +589,9 @@ export default function Analytics({ store, appConfig }) {
         .period-btn.active { background: #8b5cf6; color: #fff; }
 
         .kpi-grid { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .demo-data-banner { display: flex; align-items: center; gap: 10px; background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.25); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #a78bfa; }
+        .demo-data-banner svg { flex-shrink: 0; color: #8b5cf6; }
+        .demo-data-banner span { color: #d4c5fc; }
         .kpi-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; }
         .kpi-revenue { border-color: rgba(139,92,246,0.3); }
         .kpi-revenue .kpi-value { color: #8b5cf6; }

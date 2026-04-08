@@ -79,6 +79,9 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
   // Preview mode toggle
   const [previewOnly, setPreviewOnly] = useState(false);
 
+  // Full screen preview modal
+  const [fullScreenPreview, setFullScreenPreview] = useState(false);
+
   // Collapsible sections state
   const [openSections, setOpenSections] = useState({
     product: true,
@@ -220,6 +223,17 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
             <h2 className="offer-editor-title">Customize Offer</h2>
           </div>
           <div className="header-controls">
+            <button
+              className="fullscreen-preview-btn"
+              onClick={() => setFullScreenPreview(true)}
+              title="Full screen preview"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+              </svg>
+              Full Screen
+            </button>
             <button
               className={`preview-mode-btn ${previewOnly ? 'active' : ''}`}
               onClick={() => setPreviewOnly(p => !p)}
@@ -589,6 +603,31 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
           </div>
         )}
 
+        {/* Full Screen Preview Modal */}
+        {fullScreenPreview && (
+          <div className="fullscreen-preview-overlay" onClick={() => setFullScreenPreview(false)}>
+            <div className="fullscreen-preview-modal" onClick={e => e.stopPropagation()}>
+              <div className="fullscreen-preview-header">
+                <span className="fullscreen-preview-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                    <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                    <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                  </svg>
+                  Full Screen Preview
+                </span>
+                <button className="fullscreen-preview-close" onClick={() => setFullScreenPreview(false)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="fullscreen-preview-content">
+                <VisualPreview form={previewForm} fullSize />
+              </div>
+            </div>
+          </div>
+        )}
+
       <style>{`
         .offer-editor-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.7);
@@ -773,6 +812,89 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
           padding: 4px; border-radius: 4px; transition: color 0.15s;
         }
         .modal-close:hover { color: #fafafa; }
+
+        /* Fullscreen preview button */
+        .fullscreen-preview-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 6px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.15s;
+        }
+        .fullscreen-preview-btn:hover {
+          background: #3f3f46;
+          color: #fafafa;
+        }
+
+        /* Full screen preview overlay/modal */
+        .fullscreen-preview-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          z-index: 3000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          backdrop-filter: blur(6px);
+        }
+        .fullscreen-preview-modal {
+          background: #18181b;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 520px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);
+        }
+        .fullscreen-preview-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 20px;
+          border-bottom: 1px solid #27272a;
+          flex-shrink: 0;
+        }
+        .fullscreen-preview-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #fafafa;
+        }
+        .fullscreen-preview-close {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 6px;
+          border-radius: 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          transition: all 0.15s;
+        }
+        .fullscreen-preview-close:hover {
+          background: #3f3f46;
+          color: #fafafa;
+        }
+        .fullscreen-preview-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 24px;
+          display: flex;
+          justify-content: center;
+          background: #0f0f14;
+        }
       `}</style>
       </div>
     </div>

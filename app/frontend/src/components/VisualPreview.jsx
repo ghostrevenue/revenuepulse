@@ -103,6 +103,136 @@ export default function VisualPreview({ form, itemData, fullSize }) {
   const isWarrantyType = offerType === 'warranty';
   const isProductType = offerType === 'add_product';
 
+  // Build the upsell modal content for overlay display
+  const renderUpsellModal = () => (
+    <div className="upsell-modal-overlay">
+      <div className="upsell-modal">
+        {/* Close button */}
+        <button className="modal-close-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
+        {/* Badge */}
+        {badges.length > 0 && (
+          <div className="modal-badges">
+            {badges.map((badge, i) => (
+              <span key={i} className="modal-badge" style={{ background: badge.bg, color: badge.color }}>
+                {badge.text}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Timer — prominent */}
+        {showTimer && timerRemaining !== null && (
+          <div className="modal-timer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>Offer expires in <strong>{formatTimer(timerRemaining)}</strong></span>
+          </div>
+        )}
+
+        {/* Product image */}
+        <div className="modal-product-img-wrap">
+          {productImage ? (
+            <img src={productImage} alt={productTitle || 'Product'} className="modal-product-img" />
+          ) : (
+            <div className="modal-product-img placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="1.5" width="36" height="36">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {/* Product info */}
+        <div className="modal-product-details">
+          {isProductType && (
+            <>
+              <div className="modal-product-title">{productTitle || 'Premium Add-on Product'}</div>
+              {variantTitle && variantTitle !== productTitle && (
+                <div className="modal-variant">{variantTitle}</div>
+              )}
+              <div className="modal-product-desc">{previewMessage}</div>
+              <div className="modal-price-row">
+                <span className="modal-price">{previewPrice}</span>
+                {offerType === 'add_product' && (
+                  <span className="modal-price-note">one-time purchase</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {isDiscountType && (
+            <>
+              <div className="modal-product-title">{previewHeadline}</div>
+              <div className="modal-product-desc">{previewMessage}</div>
+              <div className="modal-discount-block">
+                <span className="modal-discount-code">{discountCode || 'SAVE15'}</span>
+                <span className="modal-discount-pct">{discountPercent ? `${discountPercent}% OFF` : '15% OFF'}</span>
+              </div>
+              <div className="modal-discount-note">Apply at checkout • No minimum purchase</div>
+            </>
+          )}
+
+          {isWarrantyType && (
+            <>
+              <div className="modal-product-title">{previewHeadline}</div>
+              <div className="modal-product-desc">{previewMessage}</div>
+              {warrantyDesc && <div className="modal-warranty-desc">{warrantyDesc}</div>}
+              <div className="modal-warranty-price">{warrantyPrice ? `+$${parseFloat(warrantyPrice).toFixed(2)}` : '+$9.99'}<span>/order</span></div>
+              <div className="modal-warranty-features">
+                <span>✓ Extended coverage</span>
+                <span>✓ Free repairs</span>
+                <span>✓ Easy claims</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Accept button */}
+        <button className="modal-accept-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          {btnLabel}
+        </button>
+
+        {/* Decline link */}
+        <button className="modal-decline-btn">No thanks, I'll pass</button>
+
+        {/* Trust row */}
+        <div className="modal-trust-row">
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Secure checkout
+          </span>
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
+              <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+              <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+            </svg>
+            Free shipping
+          </span>
+          <span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11">
+              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+            Easy returns
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className={`visual-preview-wrapper ${fullSize ? 'full-size' : ''}`}>
       {/* Browser frame container */}
@@ -148,28 +278,6 @@ export default function VisualPreview({ form, itemData, fullSize }) {
               <span>Order #<span className="order-num">#1001</span></span>
             </div>
 
-            {/* Badges */}
-            {badges.length > 0 && (
-              <div className="preview-offer-badges">
-                {badges.map((badge, i) => (
-                  <span key={i} className="preview-badge" style={{ background: badge.bg, color: badge.color }}>
-                    {badge.text}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Timer */}
-            {showTimer && timerRemaining !== null && (
-              <div className="preview-timer">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-                Offer expires in
-                <span className="timer-countdown">{formatTimer(timerRemaining)}</span>
-              </div>
-            )}
-
             {/* Thanks + headline */}
             <div className="preview-thanks">
               <span className="thanks-check">
@@ -182,7 +290,7 @@ export default function VisualPreview({ form, itemData, fullSize }) {
             <div className="preview-headline">{previewHeadline}</div>
             <div className="preview-message">{previewMessage}</div>
 
-            {/* Offer card */}
+            {/* Offer card — stylized with upsell modal preview */}
             <div className="preview-offer-card">
               {/* Discount type */}
               {isDiscountType && (
@@ -228,7 +336,7 @@ export default function VisualPreview({ form, itemData, fullSize }) {
                 </div>
               )}
 
-              {/* Product type */}
+              {/* Product type — now shows mini upsell modal preview */}
               {isProductType && (
                 <div className="preview-product-card">
                   {productImage ? (
@@ -296,6 +404,9 @@ export default function VisualPreview({ form, itemData, fullSize }) {
               </div>
             </div>
           </div>
+
+          {/* Inline upsell modal preview — the actual offer the customer sees */}
+          {renderUpsellModal()}
         </div>
       </div>
 
@@ -556,6 +667,256 @@ export default function VisualPreview({ form, itemData, fullSize }) {
           gap: 4px;
           font-size: 11px;
           color: #999;
+        }
+
+        /* ==========================================
+           UPSELL MODAL OVERLAY (post-checkout offer)
+           ========================================== */
+        .upsell-modal-overlay {
+          position: relative;
+          margin-top: 16px;
+          padding: 20px 16px 16px;
+          background: #1a1a2e;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .upsell-modal-overlay::before {
+          content: 'Customer view';
+          position: absolute;
+          top: -10px;
+          left: 16px;
+          background: #8b5cf6;
+          color: #fff;
+          font-size: 9px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        .upsell-modal {
+          position: relative;
+          background: #fff;
+          border-radius: 16px;
+          padding: 24px 20px 20px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.08);
+          max-width: 340px;
+          margin: 0 auto;
+          text-align: center;
+        }
+
+        .modal-close-btn {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: rgba(0,0,0,0.06);
+          border: none;
+          border-radius: 50%;
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          color: #666;
+          transition: background 0.15s;
+        }
+        .modal-close-btn:hover { background: rgba(0,0,0,0.12); }
+
+        .modal-badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          justify-content: center;
+          margin-bottom: 10px;
+        }
+        .modal-badge {
+          font-size: 10px;
+          font-weight: 700;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+
+        .modal-timer {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #ef4444;
+          background: rgba(239,68,68,0.08);
+          padding: 5px 12px;
+          border-radius: 9999px;
+          margin-bottom: 12px;
+          border: 1px solid rgba(239,68,68,0.2);
+        }
+        .modal-timer strong { font-size: 14px; }
+
+        .modal-product-img-wrap {
+          margin-bottom: 12px;
+        }
+        .modal-product-img {
+          width: 100px;
+          height: 100px;
+          object-fit: cover;
+          border-radius: 12px;
+          border: 1px solid rgba(0,0,0,0.06);
+          background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+        }
+        .modal-product-img.placeholder {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, #f3e8ff, #e9d5ff);
+          margin: 0 auto;
+        }
+
+        .modal-product-details { margin-bottom: 14px; }
+        .modal-product-title {
+          font-size: 16px;
+          font-weight: 700;
+          color: #1a1a1a;
+          margin-bottom: 4px;
+        }
+        .modal-variant {
+          font-size: 12px;
+          color: #8b5cf6;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        .modal-product-desc {
+          font-size: 13px;
+          color: #555;
+          line-height: 1.45;
+          margin-bottom: 8px;
+        }
+        .modal-price-row {
+          display: flex;
+          align-items: baseline;
+          justify-content: center;
+          gap: 8px;
+        }
+        .modal-price {
+          font-size: 26px;
+          font-weight: 800;
+          color: #22c55e;
+        }
+        .modal-price-note {
+          font-size: 11px;
+          color: #888;
+        }
+
+        /* Discount in modal */
+        .modal-discount-block {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          margin: 10px 0;
+        }
+        .modal-discount-code {
+          font-size: 16px;
+          font-weight: 800;
+          color: #1a1a1a;
+          background: #f3f4f6;
+          padding: 5px 14px;
+          border-radius: 6px;
+          border: 1px dashed #999;
+          font-family: 'Courier New', monospace;
+          letter-spacing: 1px;
+        }
+        .modal-discount-pct {
+          font-size: 16px;
+          font-weight: 800;
+          color: #fff;
+          background: #8b5cf6;
+          padding: 5px 12px;
+          border-radius: 6px;
+        }
+        .modal-discount-note {
+          font-size: 11px;
+          color: #888;
+          margin-top: 4px;
+        }
+
+        /* Warranty in modal */
+        .modal-warranty-desc { font-size: 12px; color: #666; margin-bottom: 6px; }
+        .modal-warranty-price {
+          font-size: 24px;
+          font-weight: 800;
+          color: #22c55e;
+          margin-bottom: 8px;
+        }
+        .modal-warranty-price span { font-size: 13px; font-weight: 400; color: #888; }
+        .modal-warranty-features {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          justify-content: center;
+        }
+        .modal-warranty-features span {
+          font-size: 11px;
+          color: #555;
+          background: #f3f4f6;
+          padding: 3px 10px;
+          border-radius: 5px;
+        }
+
+        /* Accept button */
+        .modal-accept-btn {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          background: #22c55e;
+          color: #fff;
+          border: none;
+          padding: 14px 20px;
+          border-radius: 10px;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+          letter-spacing: 0.3px;
+          box-shadow: 0 4px 14px rgba(34,197,94,0.4);
+          transition: background 0.15s;
+          margin-bottom: 10px;
+        }
+        .modal-accept-btn:hover { background: #16a34a; }
+
+        /* Decline link */
+        .modal-decline-btn {
+          background: none;
+          border: none;
+          color: #999;
+          font-size: 12px;
+          cursor: pointer;
+          padding: 4px 8px;
+          text-decoration: underline;
+          margin-bottom: 12px;
+          transition: color 0.15s;
+        }
+        .modal-decline-btn:hover { color: #666; }
+
+        /* Modal trust row */
+        .modal-trust-row {
+          display: flex;
+          justify-content: center;
+          gap: 14px;
+          flex-wrap: wrap;
+          padding-top: 10px;
+          border-top: 1px solid #f0f0f0;
+        }
+        .modal-trust-row span {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 10px;
+          color: #aaa;
         }
       `}</style>
     </div>
