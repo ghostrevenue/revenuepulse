@@ -19,6 +19,7 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [allItems, setAllItems] = useState([]);
+  const [apiError, setApiError] = useState(null);
 
   const sectionLabel = mode === 'include' ? 'Target' : 'Exclude';
   const fieldLabel = label || `${sectionLabel} ${field.charAt(0).toUpperCase() + field.slice(1)}`;
@@ -30,6 +31,7 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   // Debounced search for products
   useEffect(() => {
     if (field !== 'products' || !modalOpen) return;
+    setApiError(null);
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
@@ -37,6 +39,7 @@ export default function TargetingSelector({ mode = 'include', field, values = []
         setSearchResults(res.products || res || []);
       } catch (e) {
         console.error(e);
+        setApiError('Failed to load products — not connected to Shopify');
         setSearchResults([]);
       } finally {
         setLoading(false);
@@ -49,9 +52,19 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   useEffect(() => {
     if (!modalOpen) return;
     if (field === 'collections') {
-      api.getShopifyCollections().then(res => setAllItems(res.collections || res || [])).catch(() => setAllItems([]));
+      api.getShopifyCollections()
+        .then(res => setAllItems(res.collections || res || []))
+        .catch(() => {
+          setAllItems([]);
+          setApiError('Failed to load collections — not connected to Shopify');
+        });
     } else if (field === 'tags') {
-      api.getShopifyProductTags().then(res => setAllItems(res.tags || res || [])).catch(() => setAllItems([]));
+      api.getShopifyProductTags()
+        .then(res => setAllItems(res.tags || res || []))
+        .catch(() => {
+          setAllItems([]);
+          setApiError('Failed to load tags — not connected to Shopify');
+        });
     }
   }, [field, modalOpen]);
 
@@ -158,11 +171,12 @@ export default function TargetingSelector({ mode = 'include', field, values = []
                     autoFocus
                   />
                   <div className="target-list">
-                    {loading && <div className="target-loading">Searching...</div>}
-                    {!loading && searchResults.length === 0 && searchQuery && (
+                    {apiError && <div className="target-error">{apiError}</div>}
+                    {!apiError && loading && <div className="target-loading">Searching{searchQuery ? ` "${searchQuery}"...` : '...'}</div>}
+                    {!apiError && !loading && searchResults.length === 0 && searchQuery && (
                       <div className="target-empty">No products found for "{searchQuery}"</div>
                     )}
-                    {!loading && searchResults.length === 0 && !searchQuery && (
+                    {!apiError && !loading && searchResults.length === 0 && !searchQuery && (
                       <div className="target-empty">Start typing to search products</div>
                     )}
                     {searchResults.map(item => {
@@ -187,7 +201,8 @@ export default function TargetingSelector({ mode = 'include', field, values = []
 
               {field === 'collections' && (
                 <div className="target-list">
-                  {allItems.length === 0 && <div className="target-empty">No collections found</div>}
+                  {apiError && <div className="target-error">{apiError}</div>}
+                  {!apiError && allItems.length === 0 && <div className="target-empty">No items found</div>}
                   {allItems.map(item => {
                     const alreadyAdded = values.find(v => v.id === item.id);
                     return (
@@ -205,7 +220,8 @@ export default function TargetingSelector({ mode = 'include', field, values = []
 
               {field === 'tags' && (
                 <div className="target-list">
-                  {allItems.length === 0 && <div className="target-empty">No tags found</div>}
+                  {apiError && <div className="target-error">{apiError}</div>}
+                  {!apiError && allItems.length === 0 && <div className="target-empty">No items found</div>}
                   {allItems.filter(t => !values.includes(t)).map(tag => (
                     <div key={tag} className="target-item" onClick={() => handleAdd(tag)}>
                       <div className="target-info"><div className="target-name">{tag}</div></div>
@@ -241,6 +257,7 @@ export default function TargetingSelector({ mode = 'include', field, values = []
         .search-input { margin-bottom: 12px; }
         .target-list { max-height: 400px; overflow-y: auto; }
         .target-loading, .target-empty { text-align: center; padding: 24px; color: #52525b; font-size: 13px; }
+        .target-error { color: #ef4444; padding: 12px; font-size: 13px; text-align: center; }
         .target-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; border-radius: 8px; transition: background 0.15s; }
         .target-item:hover { background: #27272a; }
         .target-item.added { opacity: 0.5; cursor: default; }
