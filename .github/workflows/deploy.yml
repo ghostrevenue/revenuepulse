@@ -20,23 +20,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Build
+        run: npm run build
 
-      - name: Deploy to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          SHOPIFY_API_KEY: ${{ secrets.SHOPIFY_API_KEY }}
-          SHOPIFY_API_SECRET: ${{ secrets.SHOPIFY_API_SECRET }}
-        run: |
-          # Railway has multiple services. Try each one until one succeeds.
-          for SVC in app web api main; do
-            echo "Attempting deploy to service: $SVC"
-            if railway up --service "$SVC" 2>&1; then
-              echo "Successfully deployed to: $SVC"
-              exit 0
-            fi
-            echo "Service $SVC failed, trying next..."
-          done
-          echo "All service deployment attempts failed."
-          exit 1
+      # Railway auto-deploys via GitHub integration — just push and Railway picks it up
+      # No Railway CLI or token needed when GitHub integration is connected
