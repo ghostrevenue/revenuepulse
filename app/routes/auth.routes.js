@@ -132,7 +132,7 @@ router.post('/session/verify', async (req, res) => {
 // Verifies HMAC, provisions store, then redirects merchant to Shopify's authorize URL
 router.get('/partners-start', async (req, res) => {
   const { hmac, host, shop: shopFromOAuth, timestamp } = req.query;
-  console.log('[/api/auth/partners-start] query:', JSON.stringify(req.query));
+  console.log('[/api/auth/partners-start] raw query:', JSON.stringify(req.query));
 
   if (!hmac || !shopFromOAuth) {
     return res.status(400).json({ error: 'Missing required OAuth params' });
@@ -141,11 +141,17 @@ router.get('/partners-start', async (req, res) => {
   const apiSecret = process.env.SHOPIFY_API_SECRET;
   if (apiSecret) {
     try {
-      const verified = verifyShopifyHmac(req.query, apiSecret);
+      const { hmac: hmacToVerify, ...params } = req.query;
+      const message = Object.keys(params).sort().map(key => `${key}=${params[key]}`).join('&');
+      const computedHash = crypto.createHmac('sha256', apiSecret).update(message).digest('hex');
+      console.log(`[HMAC] received=${hmacToVerify} computed=${computedHash} message=${message}`);
+      console.log(`[HMAC] secret=${apiSecret.slice(0,10)}... secret_len=${apiSecret.length}`);
+      const verified = crypto.timingSafeEqual(Buffer.from(hmacToVerify || ''), Buffer.from(computedHash));
       if (!verified) {
         return res.status(401).json({ error: 'HMAC verification failed' });
       }
     } catch (e) {
+      console.error('[HMAC] error:', e.message);
       return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
     }
   }
