@@ -58,18 +58,19 @@ export default function OfferBuilder({ store, appConfig }) {
 
   // Stable refs for callbacks (prevents stale closure / immediate re-render issues)
   const editingItemRef = useRef(editingItem);
-  const formRef = useRef(null); // initialized to null; updated after form state is declared
+
+  // Form state — 4-step structure (declared first so formRef can reference form directly)
+  const [form, setForm] = useState(getDefaultForm());
+  const formRef = useRef(form);
 
   useEffect(() => {
     editingItemRef.current = editingItem;
   }, [editingItem]);
 
   useEffect(() => {
+    // formRef must track form because callbacks read formRef.current after setForm calls
     formRef.current = form;
   }, [form]);
-
-  // Form state — 4-step structure
-  const [form, setForm] = useState(getDefaultForm());
 
   function getDefaultForm() {
     return {
