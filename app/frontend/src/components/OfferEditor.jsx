@@ -17,10 +17,23 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
   const pathBg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
   const pathBorder = isUpsell ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
 
-  // Local form state — initialized via useEffect to avoid calling generateId() at render time
+  // --- ALL useState at top (Rules of Hooks: no early return before hooks) ---
   const [form, setForm] = useState(null);
   const [initialized, setInitialized] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showProductSearch, setShowProductSearch] = useState(false);
+  const [previewOnly, setPreviewOnly] = useState(false);
+  const [fullScreenPreview, setFullScreenPreview] = useState(false);
+  const [openSections, setOpenSections] = useState({
+    product: true,
+    discount: true,
+    appearance: true,
+    timer: true,
+  });
 
+  // Initialize form from item (runs after mount, before first paint)
   useEffect(() => {
     if (!item) return;
     setForm({
@@ -34,7 +47,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
       product_price: item.product_price || '',
       product_image: item.product_image || '',
       variant_id: item.variant_id || '',
-      variant_options: item.variant_options || [], // array of {id, title, price, image}
+      variant_options: item.variant_options || [],
       variant_title: item.variant_title || '',
       // Discount
       discount_code: item.discount_code || '',
@@ -56,7 +69,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
     setInitialized(true);
   }, [item?.id]);
 
-  // Guard: don't render until initialized
+  // Guard: don't render until initialized — but hooks are already declared above ✓
   if (!initialized || !form) {
     return (
       <div className="offer-editor-overlay" onClick={onClose}>
@@ -70,25 +83,6 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
   function updateField(key, value) {
     setForm(f => ({ ...f, [key]: value }));
   }
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [showProductSearch, setShowProductSearch] = useState(false);
-
-  // Preview mode toggle
-  const [previewOnly, setPreviewOnly] = useState(false);
-
-  // Full screen preview modal
-  const [fullScreenPreview, setFullScreenPreview] = useState(false);
-
-  // Collapsible sections state
-  const [openSections, setOpenSections] = useState({
-    product: true,
-    discount: true,
-    appearance: true,
-    timer: true,
-  });
 
   function toggleSection(key) {
     setOpenSections(s => ({ ...s, [key]: !s[key] }));
