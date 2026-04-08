@@ -28,4 +28,29 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SHOPIFY_API_KEY: ${{ secrets.SHOPIFY_API_KEY }}
           SHOPIFY_API_SECRET: ${{ secrets.SHOPIFY_API_SECRET }}
-        run: railway up
+        run: |
+          # First detect available services by running railway up and capturing the error
+          echo "Detecting available Railway services..."
+          ERROR_OUTPUT=$(railway up 2>&1)
+          echo "Railway output: $ERROR_OUTPUT"
+
+          # Extract service name from error — Railway outputs something like
+          # "Multiple services found: [app, web, api]. Please specify --service"
+          SERVICE_NAME=$(echo "$ERROR_OUTPUT" | grep -oP 'Multiple services found[^\n]*' | \
+            grep -oP '(?<=\[)[^\],]+' | head -1 | tr -d ' ')
+
+          if [ -z "$SERVICE_NAME" ]; then
+            # Fallback: try common service names
+            for SVC in app web api main; do
+              echo "Trying service: $SVC"
+              if railway up --service "$SVC" 2>&1; then
+                echo "Deployed to: $SVC"
+                exit 0
+              fi
+            done
+            echo "Could not determine service name. Check Railway project configuration."
+            exit 1
+          else
+            echo "Detected service: $SERVICE_NAME"
+            railway up --service "$SERVICE_NAME"
+          fi
