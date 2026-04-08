@@ -55,6 +55,18 @@ export default function OfferBuilder({ store, appConfig }) {
   // Editor state
   const [editingItem, setEditingItem] = useState(null); // { item, pathType }
 
+  // Stable refs for callbacks (prevents stale closure / immediate re-render issues)
+  const editingItemRef = useRef(editingItem);
+  const formRef = useRef(form);
+
+  useEffect(() => {
+    editingItemRef.current = editingItem;
+  }, [editingItem]);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+
   // Form state — 4-step structure
   const [form, setForm] = useState(getDefaultForm());
 
@@ -230,9 +242,9 @@ export default function OfferBuilder({ store, appConfig }) {
   }
 
   const openEditAcceptItem = useCallback((itemId) => {
-    const item = form.accept_path_items.find(i => i.id === itemId);
+    const item = formRef.current.accept_path_items.find(i => i.id === itemId);
     if (item) setEditingItem({ item, pathType: 'upsell' });
-  }, [form.accept_path_items]);
+  }, []); // No deps — uses formRef
 
   // ── Decline Path item management ────────────────────────────────────────────
   function addDeclineItem() {
@@ -258,18 +270,20 @@ export default function OfferBuilder({ store, appConfig }) {
   }
 
   const openEditDeclineItem = useCallback((itemId) => {
-    const item = form.decline_path_items.find(i => i.id === itemId);
+    const item = formRef.current.decline_path_items.find(i => i.id === itemId);
     if (item) setEditingItem({ item, pathType: 'downsell' });
-  }, [form.decline_path_items]);
+  }, []); // No deps — uses formRef
 
   const handleEditorSave = useCallback((updatedItem) => {
-    if (editingItem?.pathType === 'upsell') {
-      updateAcceptItem(editingItem.item.id, updatedItem);
+    const current = editingItemRef.current;
+    if (!current) return;
+    if (current.pathType === 'upsell') {
+      updateAcceptItem(current.item.id, updatedItem);
     } else {
-      updateDeclineItem(editingItem.item.id, updatedItem);
+      updateDeclineItem(current.item.id, updatedItem);
     }
     setEditingItem(null);
-  }, [editingItem]);
+  }, []); // No deps — uses refs
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -864,79 +878,180 @@ export default function OfferBuilder({ store, appConfig }) {
                 </div>
               )}
 
-              {/* ── Step 2: Flow Builder — Combined Upsell/Downsell Tree ── */}
+              {/* ── Step 2: Flow Builder — Node-Based Flowchart ── */}
               {step === 2 && (
                 <div className="step-content" ref={stepContentRef}>
                   <h3 className="step-title">Flow Builder</h3>
                   <p className="step-desc">
-                    Build your offer flow. Upsells appear when the customer accepts, downsells when they decline.
+                    Build your offer flow as a visual flowchart. Upsells appear when the customer accepts, downsells when they decline.
                     Click any offer to edit. Maximum {MAX_ITEMS} nodes total.
                   </p>
 
-                  <div className="flow-tree-section">
-                    {/* Upsell list */}
-                    {form.accept_path_items.map((item, idx) => (
-                      <div key={item.id} className="flow-tree-row">
-                        <div className="flow-tree-node upsell-node">
-                          <div className="flow-node-label">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="10" height="10">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                            Upsell {idx + 1}
-                          </div>
-                          <div className="flow-node-card">
-                            {renderItemCard(item, 'upsell', openEditAcceptItem, removeAcceptItem)}
-                          </div>
-                          <button
-                            type="button"
-                            className="flow-add-downsell-btn"
-                            onClick={addDeclineItem}
-                            disabled={form.accept_path_items.length + form.decline_path_items.length >= MAX_ITEMS}
-                            title="Add downsell after this upsell"
-                          >
-                            + Downsell
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  {/* SVG marker definitions for arrowheads */}
+                  <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+                    <defs>
+                      <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
+                      </marker>
+                      <marker id="redArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
+                      </marker>
+                    </defs>
+                  </svg>
 
-                    {/* Downsell list — shown below upsells */}
-                    {form.decline_path_items.map((item, idx) => (
-                      <div key={item.id} className="flow-tree-row">
-                        <div className="flow-tree-node downsell-node">
-                          <div className="flow-node-label">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="10" height="10">
-                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                            Downsell {idx + 1}
-                          </div>
-                          <div className="flow-node-card">
-                            {renderItemCard(item, 'downsell', openEditDeclineItem, removeDeclineItem)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
+                  <div className="flow-canvas">
                     {/* Empty state */}
                     {form.accept_path_items.length === 0 && form.decline_path_items.length === 0 && (
-                      <div className="flow-empty-hint">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="32" height="32" style={{ color: '#3f3f46' }}>
-                          <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                          <line x1="7" y1="7" x2="7.01" y2="7" />
-                        </svg>
-                        <p>No offers yet. Add your first upsell to get started.</p>
-                        <p className="flow-empty-sub">You can add downsells after creating upsells.</p>
+                      <div className="flow-empty-state">
+                        <div className="flow-trigger-node">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                          </svg>
+                          Order meets trigger
+                        </div>
+                        <div className="flow-trigger-connector">
+                          <svg height="32" width="20">
+                            <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
+                          </svg>
+                        </div>
+                        <div className="flow-empty-hint-node">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                            <line x1="7" y1="7" x2="7.01" y2="7" />
+                          </svg>
+                          <p>No offers yet</p>
+                          <p className="flow-empty-sub">Add your first upsell to get started</p>
+                        </div>
+                        <div className="flow-trigger-connector">
+                          <svg height="32" width="20">
+                            <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
+                          </svg>
+                        </div>
+                        <button type="button" className="flow-add-upsell-btn flow-add-first" onClick={addAcceptItem}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="16" height="16">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          Add First Upsell
+                        </button>
                       </div>
                     )}
 
-                    {/* Add Upsell button at bottom */}
-                    {(form.accept_path_items.length + form.decline_path_items.length) < MAX_ITEMS && (
-                      <button type="button" className="flow-add-upsell-btn" onClick={addAcceptItem}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="16" height="16">
-                          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                        Add Upsell
-                      </button>
+                    {/* Flowchart with upsell nodes */}
+                    {form.accept_path_items.length > 0 && (
+                      <>
+                        {/* Trigger node at top */}
+                        <div className="flow-trigger-node">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                          </svg>
+                          Order meets trigger
+                        </div>
+
+                        {/* Vertical connector from trigger to first upsell */}
+                        <div className="flow-vertical-connector">
+                          <svg height="28" width="20">
+                            <path d="M10 0 L10 28" stroke="#22c55e" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
+                          </svg>
+                        </div>
+
+                        {/* Upsell nodes */}
+                        {form.accept_path_items.map((item, idx) => {
+                          const hasDownsell = idx < form.decline_path_items.length;
+                          const downsell = hasDownsell ? form.decline_path_items[idx] : null;
+                          const totalNodes = form.accept_path_items.length + form.decline_path_items.length;
+
+                          return (
+                            <div key={item.id} className="flow-node-row">
+                              {/* Upsell card column */}
+                              <div className="upsell-col">
+                                <div className="flow-node upsell-node">
+                                  <div className="flow-node-header">
+                                    <span className="flow-node-label">
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="10" height="10">
+                                        <polyline points="20 6 9 17 4 12" />
+                                      </svg>
+                                      Upsell {idx + 1}
+                                    </span>
+                                  </div>
+                                  <div className="flow-node-card">
+                                    {renderItemCard(item, 'upsell', openEditAcceptItem, removeAcceptItem)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Branch column (downsell or add button) */}
+                              <div className="flow-branch-col">
+                                {hasDownsell ? (
+                                  <>
+                                    {/* Horizontal red line from upsell to downsell */}
+                                    <div className="branch-line-h">
+                                      <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                                        <path d="M 0 10 L 100 10" stroke="#ef4444" strokeWidth="2" markerEnd="url(#redArrow)" fill="none" />
+                                      </svg>
+                                    </div>
+                                    {/* Downsell card */}
+                                    <div className="downsell-col">
+                                      <div className="flow-node downsell-node">
+                                        <div className="flow-node-header">
+                                          <span className="flow-node-label">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="10" height="10">
+                                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                            </svg>
+                                            Downsell {idx + 1}
+                                          </span>
+                                        </div>
+                                        <div className="flow-node-card">
+                                          {renderItemCard(downsell, 'downsell', openEditDeclineItem, removeDeclineItem)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="add-downsell-branch-btn"
+                                    onClick={addDeclineItem}
+                                    disabled={totalNodes >= MAX_ITEMS}
+                                    title="Add downsell for this upsell"
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
+                                    Downsell
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Vertical connector between last upsell and Add Upsell button */}
+                        {(form.accept_path_items.length + form.decline_path_items.length) < MAX_ITEMS && (
+                          <div className="flow-upsell-connector-row">
+                            <div className="flow-upsell-connector-line">
+                              <svg height="24" width="20">
+                                <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#greenArrow)" fill="none" />
+                              </svg>
+                            </div>
+                            <button type="button" className="flow-add-upsell-btn" onClick={addAcceptItem}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="16" height="16">
+                                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                              Add Upsell
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Flow end indicator */}
+                        {form.accept_path_items.length > 0 && (
+                          <div className="flow-end-node">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                            </svg>
+                            End of flow
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -1243,6 +1358,58 @@ export default function OfferBuilder({ store, appConfig }) {
         .flow-add-upsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(139,92,246,0.08); border: 2px dashed rgba(139,92,246,0.3); color: #8b5cf6; padding: 14px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-top: 8px; }
         .flow-add-upsell-btn:hover { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5); }
         .total-branch { background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); }
+
+        /* NEW: Flowchart visual styles */
+        .flow-canvas { display: flex; flex-direction: column; gap: 0; padding: 8px 0 16px; position: relative; }
+
+        /* Trigger node */
+        .flow-trigger-node { display: flex; align-items: center; justify-content: center; gap: 8px; background: #8b5cf6; color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; width: fit-content; margin: 0 auto; box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
+        .flow-trigger-connector { display: flex; justify-content: center; height: 32px; margin-left: 0; }
+
+        /* Vertical connectors */
+        .flow-vertical-connector { display: flex; justify-content: center; height: 28px; }
+        .flow-upsell-connector-row { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; }
+        .flow-upsell-connector-line { display: flex; justify-content: center; }
+
+        /* Node rows */
+        .flow-node-row { display: flex; align-items: flex-start; gap: 0; position: relative; min-height: 120px; }
+
+        /* Upsell column */
+        .upsell-col { flex: 0 0 300px; position: relative; }
+        .flow-node { display: flex; flex-direction: column; gap: 0; }
+        .flow-node-header { padding: 8px 0 6px; }
+        .flow-node.upsell-node .flow-node-header { }
+        .flow-node.downsell-node .flow-node-header { }
+
+        /* Branch column (right of upsells) */
+        .flow-branch-col { flex: 1; display: flex; align-items: center; min-height: 120px; position: relative; padding: 0 8px; }
+
+        /* Horizontal branch line */
+        .branch-line-h { flex: 1; position: relative; height: 20px; margin-right: 8px; }
+
+        /* Downsell column */
+        .downsell-col { flex: 0 0 300px; }
+
+        /* Add Downsell branch button */
+        .add-downsell-branch-btn { display: flex; align-items: center; gap: 6px; background: rgba(239,68,68,0.08); border: 2px dashed rgba(239,68,68,0.4); color: #ef4444; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .add-downsell-branch-btn:hover:not(:disabled) { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.6); }
+        .add-downsell-branch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Add Upsell button in flow */
+        .flow-add-upsell-btn.flow-add-first { width: fit-content; margin: 8px auto 0; }
+        .flow-add-upsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(139,92,246,0.08); border: 2px dashed rgba(139,92,246,0.3); color: #8b5cf6; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .flow-add-upsell-btn:hover { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5); }
+
+        /* Empty state in flowchart */
+        .flow-empty-state { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 16px 0; }
+        .flow-empty-hint-node { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 24px 32px; background: rgba(139,92,246,0.05); border: 2px dashed rgba(139,92,246,0.2); border-radius: 12px; color: #52525b; text-align: center; }
+        .flow-empty-hint-node svg { color: #3f3f46; margin-bottom: 4px; }
+        .flow-empty-hint-node p { font-size: 13px; margin: 0; color: #71717a; }
+        .flow-empty-sub { font-size: 12px !important; color: #52525b !important; }
+
+        /* Flow end node */
+        .flow-end-node { display: flex; align-items: center; justify-content: center; gap: 6px; color: #52525b; font-size: 12px; font-weight: 500; padding: 12px 0; margin-top: 8px; }
+        .flow-end-node svg { color: #3f3f46; }
 
         /* Review step */
         .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }

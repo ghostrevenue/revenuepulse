@@ -17,34 +17,57 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
   const pathBg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
   const pathBorder = isUpsell ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
 
-  const [form, setForm] = useState({
-    id: item?.id || generateId(),
-    offer_type: item?.offer_type || 'add_product',
-    headline: item?.headline || 'Wait! Add this to your order',
-    message: item?.message || 'Get it delivered with your current order — just one click away.',
-    // Product
-    product_id: item?.product_id || '',
-    product_title: item?.product_title || '',
-    product_price: item?.product_price || '',
-    product_image: item?.product_image || '',
-    variant_id: item?.variant_id || '',
-    // Discount
-    discount_code: item?.discount_code || '',
-    discount_percent: item?.discount_percent || '',
-    // Warranty
-    warranty_price: item?.warranty_price || '',
-    warranty_description: item?.warranty_description || '',
-    warranty_covered: item?.warranty_covered || '',
-    // Badge
-    badge_text: item?.badge_text || '',
-    badge_color: item?.badge_color || '#8b5cf6',
-    show_badge: item?.show_badge !== undefined ? item.show_badge : true,
-    // Timer
-    show_timer: item?.show_timer || false,
-    timer_minutes: item?.timer_minutes || 15,
-    // Button
-    button_text: item?.button_text || '',
-  });
+  // Local form state — initialized via useEffect to avoid calling generateId() at render time
+  const [form, setForm] = useState(null);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!item) return;
+    setForm({
+      id: item.id || generateId(),
+      offer_type: item.offer_type || 'add_product',
+      headline: item.headline || 'Wait! Add this to your order',
+      message: item.message || 'Get it delivered with your current order — just one click away.',
+      // Product
+      product_id: item.product_id || '',
+      product_title: item.product_title || '',
+      product_price: item.product_price || '',
+      product_image: item.product_image || '',
+      variant_id: item.variant_id || '',
+      // Discount
+      discount_code: item.discount_code || '',
+      discount_percent: item.discount_percent || '',
+      // Warranty
+      warranty_price: item.warranty_price || '',
+      warranty_description: item.warranty_description || '',
+      warranty_covered: item.warranty_covered || '',
+      // Badge
+      badge_text: item.badge_text || '',
+      badge_color: item.badge_color || '#8b5cf6',
+      show_badge: item.show_badge !== undefined ? item.show_badge : true,
+      // Timer
+      show_timer: item.show_timer || false,
+      timer_minutes: item.timer_minutes || 15,
+      // Button
+      button_text: item.button_text || '',
+    });
+    setInitialized(true);
+  }, [item?.id]); // Only re-run when the actual item ID changes
+
+  // Guard: don't render until initialized
+  if (!initialized || !form) {
+    return (
+      <div className="offer-editor-overlay" onClick={onClose}>
+        <div className="offer-editor-panel" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: '#71717a' }}>Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  function updateField(key, value) {
+    setForm(f => ({ ...f, [key]: value }));
+  }
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -72,10 +95,6 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, form.offer_type, showProductSearch]);
-
-  function updateField(key, value) {
-    setForm(f => ({ ...f, [key]: value }));
-  }
 
   function handleProductSelect(product) {
     const variant = product.variants && product.variants[0];

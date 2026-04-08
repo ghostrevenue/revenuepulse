@@ -28,10 +28,14 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   const modeBg = mode === 'include' ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
   const modeBorder = mode === 'include' ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
 
+  // Track if we got a 401 (not connected) vs other error
+  const [notConnected, setNotConnected] = useState(false);
+
   // Debounced search for products
   useEffect(() => {
     if (field !== 'products' || !modalOpen) return;
     setApiError(null);
+    setNotConnected(false);
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
@@ -39,7 +43,12 @@ export default function TargetingSelector({ mode = 'include', field, values = []
         setSearchResults(res.products || res || []);
       } catch (e) {
         console.error(e);
-        setApiError('Failed to load products — not connected to Shopify');
+        if (e.message && e.message.includes('401')) {
+          setNotConnected(true);
+          setApiError('not_connected');
+        } else {
+          setApiError('Failed to load products');
+        }
         setSearchResults([]);
       } finally {
         setLoading(false);
@@ -51,22 +60,89 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   // Fetch collections and tags once when modal opens
   useEffect(() => {
     if (!modalOpen) return;
+    setApiError(null);
+    setNotConnected(false);
     if (field === 'collections') {
       api.getShopifyCollections()
         .then(res => setAllItems(res.collections || res || []))
-        .catch(() => {
+        .catch(e => {
           setAllItems([]);
-          setApiError('Failed to load collections — not connected to Shopify');
+          if (e.message && e.message.includes('401')) {
+            setNotConnected(true);
+            setApiError('not_connected');
+          } else {
+            setApiError('Failed to load collections');
+          }
         });
     } else if (field === 'tags') {
       api.getShopifyProductTags()
         .then(res => setAllItems(res.tags || res || []))
-        .catch(() => {
+        .catch(e => {
           setAllItems([]);
-          setApiError('Failed to load tags — not connected to Shopify');
+          if (e.message && e.message.includes('401')) {
+            setNotConnected(true);
+            setApiError('not_connected');
+          } else {
+            setApiError('Failed to load tags');
+          }
         });
     }
   }, [field, modalOpen]);
+
+  // Manual ID entry state
+  const [manualIdInput, setManualIdInput] = useState('');
+  const [manualIdError, setManualIdError] = useState('');
+
+  function handleManualAdd() {
+    const raw = manualIdInput.trim();
+    if (!raw) {
+      setManualIdError('Enter a product ID');
+      return;
+    }
+    // Accept numeric ID or URL
+    let id = raw;
+    // Extract ID from URL if it looks like a Shopify product URL
+    const urlMatch = raw.match(/products\/(\d+)/);
+    if (urlMatch) id = urlMatch[1];
+    if (!/^\d+$/.test(id)) {
+      setManualIdError('Invalid product ID format');
+      return;
+    }
+    const newItem = { id: String(id), title: `Product ${id}`, image: '' };
+    if (!values.find(v => v.id === newItem.id)) {
+      onChange([...values, newItem]);
+    }
+    setManualIdInput('');
+    setManualIdError('');
+  }
+
+  function handleManualIdKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleManualAdd();
+    }
+  }
+
+  function renderManualEntry(placeholder, example) {
+    return (
+      <div className="manual-entry-section">
+        <div className="manual-entry-label">Add by ID or URL</div>
+        <div className="manual-entry-row">
+          <input
+            className="form-input"
+            type="text"
+            placeholder={placeholder}
+            value={manualIdInput}
+            onChange={e => { setManualIdInput(e.target.value); setManualIdError(''); }}
+            onKeyDown={handleManualIdKeyDown}
+          />
+          <button type="button" className="btn-primary" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={handleManualAdd}>Add</button>
+        </div>
+        {manualIdError && <div className="manual-id-error">{manualIdError}</div>}
+        <div className="manual-entry-hint">{example}</div>
+      </div>
+    );
+  }
 
   function handleAdd(item) {
     if (!values.find(v => v.id === item.id || v === item)) {
@@ -171,62 +247,123 @@ export default function TargetingSelector({ mode = 'include', field, values = []
                     autoFocus
                   />
                   <div className="target-list">
-                    {apiError && <div className="target-error">{apiError}</div>}
-                    {!apiError && loading && <div className="target-loading">Searching{searchQuery ? ` "${searchQuery}"...` : '...'}</div>}
-                    {!apiError && !loading && searchResults.length === 0 && searchQuery && (
-                      <div className="target-empty">No products found for "{searchQuery}"</div>
-                    )}
-                    {!apiError && !loading && searchResults.length === 0 && !searchQuery && (
-                      <div className="target-empty">Start typing to search products</div>
-                    )}
-                    {searchResults.map(item => {
-                      const alreadyAdded = values.find(v => v.id === item.id);
-                      return (
-                        <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
-                          onClick={() => !alreadyAdded && handleAdd(item)}>
-                          {item.image && <img src={item.image} alt="" className="target-thumb" />}
-                          <div className="target-info">
-                            <div className="target-name">{item.title}</div>
-                            {item.variants && item.variants[0] && (
-                              <div className="target-price">${parseFloat(item.variants[0].price || 0).toFixed(2)}</div>
-                            )}
-                          </div>
-                          {alreadyAdded && <span className="target-added-check">✓</span>}
+                    {apiError === 'not_connected' ? (
+                      <>
+                        <div className="target-not-connected">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28" style={{ color: '#ef4444', marginBottom: '8px' }}>
+                            <path d="M1 1l22 22M9 9a3 3 0 014.24 4.24M15.24 15.24A3 3 0 0011.17 11.17M12 12a3 3 0 014.24 4.24" />
+                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                          </svg>
+                          <div className="not-connected-title">Not connected to Shopify</div>
+                          <div className="not-connected-sub">Connect your store to search products. Or add by ID below.</div>
                         </div>
-                      );
-                    })}
+                        {renderManualEntry('Product ID (e.g. 12345678)', 'Paste product ID or admin URL: /admin/products/12345678')}
+                      </>
+                    ) : (
+                      <>
+                        {apiError && <div className="target-error">{apiError}</div>}
+                        {!apiError && loading && <div className="target-loading">Searching{searchQuery ? ` "${searchQuery}"...` : '...'}</div>}
+                        {!apiError && !loading && searchResults.length === 0 && searchQuery && (
+                          <div className="target-empty">No products found for "{searchQuery}"</div>
+                        )}
+                        {!apiError && !loading && searchResults.length === 0 && !searchQuery && (
+                          <div className="target-empty">Start typing to search products</div>
+                        )}
+                        {searchResults.map(item => {
+                          const alreadyAdded = values.find(v => v.id === item.id);
+                          return (
+                            <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
+                              onClick={() => !alreadyAdded && handleAdd(item)}>
+                              {item.image && <img src={item.image} alt="" className="target-thumb" />}
+                              <div className="target-info">
+                                <div className="target-name">{item.title}</div>
+                                {item.variants && item.variants[0] && (
+                                  <div className="target-price">${parseFloat(item.variants[0].price || 0).toFixed(2)}</div>
+                                )}
+                              </div>
+                              {alreadyAdded && <span className="target-added-check">✓</span>}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
                   </div>
                 </>
               )}
 
               {field === 'collections' && (
                 <div className="target-list">
-                  {apiError && <div className="target-error">{apiError}</div>}
-                  {!apiError && allItems.length === 0 && <div className="target-empty">No items found</div>}
-                  {allItems.map(item => {
-                    const alreadyAdded = values.find(v => v.id === item.id);
-                    return (
-                      <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
-                        onClick={() => !alreadyAdded && handleAdd(item)}>
-                        <div className="target-info">
-                          <div className="target-name">{item.title}</div>
-                        </div>
-                        {alreadyAdded && <span className="target-added-check">✓</span>}
+                  {apiError === 'not_connected' ? (
+                    <>
+                      <div className="target-not-connected">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28" style={{ color: '#ef4444', marginBottom: '8px' }}>
+                          <path d="M1 1l22 22M9 9a3 3 0 014.24 4.24M15.24 15.24A3 3 0 0011.17 11.17M12 12a3 3 0 014.24 4.24" />
+                          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                        </svg>
+                        <div className="not-connected-title">Not connected to Shopify</div>
+                        <div className="not-connected-sub">Connect your store to browse collections. Or add by ID below.</div>
                       </div>
-                    );
-                  })}
+                      {renderManualEntry('Collection ID (e.g. 12345678)', 'Paste collection ID or admin URL: /admin/collections/12345678')}
+                    </>
+                  ) : (
+                    <>
+                      {apiError && <div className="target-error">{apiError}</div>}
+                      {!apiError && allItems.length === 0 && <div className="target-empty">No collections found</div>}
+                      {allItems.map(item => {
+                        const alreadyAdded = values.find(v => v.id === item.id);
+                        return (
+                          <div key={item.id} className={`target-item ${alreadyAdded ? 'added' : ''}`}
+                            onClick={() => !alreadyAdded && handleAdd(item)}>
+                            <div className="target-info">
+                              <div className="target-name">{item.title}</div>
+                            </div>
+                            {alreadyAdded && <span className="target-added-check">✓</span>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
                 </div>
               )}
 
               {field === 'tags' && (
                 <div className="target-list">
-                  {apiError && <div className="target-error">{apiError}</div>}
-                  {!apiError && allItems.length === 0 && <div className="target-empty">No items found</div>}
-                  {allItems.filter(t => !values.includes(t)).map(tag => (
-                    <div key={tag} className="target-item" onClick={() => handleAdd(tag)}>
-                      <div className="target-info"><div className="target-name">{tag}</div></div>
-                    </div>
-                  ))}
+                  {apiError === 'not_connected' ? (
+                    <>
+                      <div className="target-not-connected">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="28" height="28" style={{ color: '#ef4444', marginBottom: '8px' }}>
+                          <path d="M1 1l22 22M9 9a3 3 0 014.24 4.24M15.24 15.24A3 3 0 0011.17 11.17M12 12a3 3 0 014.24 4.24" />
+                          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                        </svg>
+                        <div className="not-connected-title">Not connected to Shopify</div>
+                        <div className="not-connected-sub">Connect your store to browse tags. Or add by typing below.</div>
+                      </div>
+                      <div className="manual-entry-section">
+                        <div className="manual-entry-label">Add tag</div>
+                        <div className="manual-entry-row">
+                          <input
+                            className="form-input"
+                            type="text"
+                            placeholder="Tag name (e.g. sale)"
+                            value={manualIdInput}
+                            onChange={e => { setManualIdInput(e.target.value); setManualIdError(''); }}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const raw = manualIdInput.trim(); if (raw && !values.includes(raw)) onChange([...values, raw]); setManualIdInput(''); } }}
+                          />
+                          <button type="button" className="btn-primary" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { const raw = manualIdInput.trim(); if (raw && !values.includes(raw)) onChange([...values, raw]); setManualIdInput(''); }}>Add</button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {apiError && <div className="target-error">{apiError}</div>}
+                      {!apiError && allItems.length === 0 && <div className="target-empty">No tags found</div>}
+                      {allItems.filter(t => !values.includes(t)).map(tag => (
+                        <div key={tag} className="target-item" onClick={() => handleAdd(tag)}>
+                          <div className="target-info"><div className="target-name">{tag}</div></div>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -266,6 +403,15 @@ export default function TargetingSelector({ mode = 'include', field, values = []
         .target-name { font-size: 13px; font-weight: 500; color: #e5e5e5; }
         .target-price { font-size: 12px; color: #71717a; margin-top: 2px; }
         .target-added-check { color: #22c55e; font-size: 16px; }
+        .target-not-connected { display: flex; flex-direction: column; align-items: center; padding: 24px 16px; text-align: center; }
+        .not-connected-title { font-size: 14px; font-weight: 600; color: #e5e5e5; margin-bottom: 4px; }
+        .not-connected-sub { font-size: 12px; color: #71717a; }
+        .manual-entry-section { width: 100%; padding: 12px 0 4px; border-top: 1px solid #3f3f46; margin-top: 8px; }
+        .manual-entry-label { font-size: 11px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+        .manual-entry-row { display: flex; gap: 8px; }
+        .manual-entry-row .form-input { flex: 1; font-size: 13px; }
+        .manual-id-error { color: #ef4444; font-size: 11px; margin-top: 4px; }
+        .manual-entry-hint { font-size: 11px; color: #52525b; margin-top: 4px; }
       `}</style>
     </div>
   );

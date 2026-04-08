@@ -155,6 +155,7 @@ router.get('/offers', verifyShop, async (req, res) => {
 // Create a new upsell offer (status defaults to 'draft')
 router.post('/offers', verifyShop, async (req, res) => {
   const {
+    name,
     offer_type, trigger_min_amount, trigger_product_ids,
     upsell_product_id, upsell_discount_code, upsell_discount_value,
     headline, message, active,
@@ -220,7 +221,7 @@ router.post('/offers', verifyShop, async (req, res) => {
       : null;
 
     const params = [
-      storeId, offer_type,
+      storeId, name || null, offer_type,
       trigger_min_amount || 0,
       triggerJson,
       upsell_product_id || null,
@@ -251,7 +252,7 @@ router.post('/offers', verifyShop, async (req, res) => {
     if (db.usePostgres) {
       await db.prepare(`
         INSERT INTO upsell_offers
-          (store_id, offer_type, trigger_min_amount, trigger_product_ids,
+          (store_id, name, offer_type, trigger_min_amount, trigger_product_ids,
            upsell_product_id, upsell_discount_code, upsell_discount_value,
            headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id,
            status, target_type,
@@ -260,14 +261,14 @@ router.post('/offers', verifyShop, async (req, res) => {
            target_first_time_customer, target_customer_tags,
            trigger_max_amount, target_collection_ids,
            accept_path_items, decline_path_items)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
       `).run(...params);
       const offer = await db.prepare('SELECT * FROM upsell_offers WHERE id = (SELECT MAX(id) FROM upsell_offers WHERE store_id = $1)').get(storeId);
       return res.json({ offer });
     } else {
       db.prepare(`
         INSERT INTO upsell_offers
-          (store_id, offer_type, trigger_min_amount, trigger_product_ids,
+          (store_id, name, offer_type, trigger_min_amount, trigger_product_ids,
            upsell_product_id, upsell_discount_code, upsell_discount_value,
            headline, message, active, ab_variant_group_id, traffic_split, fallback_for_offer_id,
            status, target_type,
@@ -276,7 +277,7 @@ router.post('/offers', verifyShop, async (req, res) => {
            target_first_time_customer, target_customer_tags,
            trigger_max_amount, target_collection_ids,
            accept_path_items, decline_path_items)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(...params);
       const offer = db.prepare('SELECT * FROM upsell_offers WHERE id = last_insert_rowid()').get();
       return res.json({ offer });
@@ -303,6 +304,7 @@ router.get('/offers/:id', verifyShop, async (req, res) => {
 // Update an offer (cannot update archived offers)
 router.put('/offers/:id', verifyShop, async (req, res) => {
   const {
+    name,
     offer_type, trigger_min_amount, trigger_product_ids,
     upsell_product_id, upsell_discount_code, upsell_discount_value,
     headline, message, active,
@@ -368,6 +370,7 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
       : existing.decline_path_items;
 
     const params = [
+      name ?? existing.name,
       offer_type ?? existing.offer_type,
       trigger_min_amount ?? existing.trigger_min_amount,
       triggerJson,
@@ -401,22 +404,24 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
     if (db.usePostgres) {
       await db.prepare(`
         UPDATE upsell_offers SET
-          offer_type = $1, trigger_min_amount = $2, trigger_product_ids = $3,
-          upsell_product_id = $4, upsell_discount_code = $5, upsell_discount_value = $6,
-          headline = $7, message = $8, active = $9,
-          ab_variant_group_id = $10, traffic_split = $11, fallback_for_offer_id = $12,
-          status = $13, target_type = $14,
-          include_product_ids = $15, include_collection_ids = $16, include_tags = $17,
-          exclude_product_ids = $18, exclude_collection_ids = $19, exclude_tags = $20,
-          target_first_time_customer = $21, target_customer_tags = $22,
-          trigger_max_amount = $23, target_collection_ids = $24,
-          accept_path_items = $25, decline_path_items = $26,
+          name = $1,
+          offer_type = $2, trigger_min_amount = $3, trigger_product_ids = $4,
+          upsell_product_id = $5, upsell_discount_code = $6, upsell_discount_value = $7,
+          headline = $8, message = $9, active = $10,
+          ab_variant_group_id = $11, traffic_split = $12, fallback_for_offer_id = $13,
+          status = $14, target_type = $15,
+          include_product_ids = $16, include_collection_ids = $17, include_tags = $18,
+          exclude_product_ids = $19, exclude_collection_ids = $20, exclude_tags = $21,
+          target_first_time_customer = $22, target_customer_tags = $23,
+          trigger_max_amount = $24, target_collection_ids = $25,
+          accept_path_items = $26, decline_path_items = $27,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $27 AND store_id = $28
+        WHERE id = $28 AND store_id = $29
       `).run(...params);
     } else {
       db.prepare(`
         UPDATE upsell_offers SET
+          name = ?,
           offer_type = ?, trigger_min_amount = ?, trigger_product_ids = ?,
           upsell_product_id = ?, upsell_discount_code = ?, upsell_discount_value = ?,
           headline = ?, message = ?, active = ?,
