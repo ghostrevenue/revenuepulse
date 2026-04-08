@@ -14,9 +14,10 @@ async function verifyShop(req, res, next) {
   next();
 }
 
-// ── GET /api/shopify/products ────────────────────────────────────────────────
+// ── GET /api/shopify/products/search ─────────────────────────────────────────
 // Search products from the merchant's Shopify store (for targeting selectors)
-router.get('/products', verifyShop, async (req, res) => {
+// Frontend calls this via searchShopifyProducts(query, limit)
+router.get('/products/search', verifyShop, async (req, res) => {
   const { query = '', limit = 50 } = req.query;
   try {
     const shop = req.store.shop;

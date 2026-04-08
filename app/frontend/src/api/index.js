@@ -152,9 +152,9 @@ export const api = {
   }),
 
   // --- SHOPIFY STORE DATA (for targeting selectors) ---
-  // GET /api/shopify/products?query=search&limit=50
+  // GET /api/shopify/products/search?query=search&limit=50
   searchShopifyProducts: (query = '', limit = 50) =>
-    apiFetch(`/api/shopify/products?query=${encodeURIComponent(query)}&limit=${limit}`),
+    apiFetch(`/api/shopify/products/search?query=${encodeURIComponent(query)}&limit=${limit}`),
 
   // GET /api/shopify/collections
   getShopifyCollections: () => apiFetch('/api/shopify/collections'),
