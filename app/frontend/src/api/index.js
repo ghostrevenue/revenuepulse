@@ -43,7 +43,21 @@ export const api = {
     if (oAuthParams) {
       body = JSON.stringify(oAuthParams);
     } else if (storeId) {
+      // Don't include X-Shopify-Shop-Domain header when storeId is present —
+      // the backend reads storeId from body, and the shop header would take
+      // precedence over storeId lookup (causing "Store not found" on fresh installs).
       body = JSON.stringify({ storeId });
+      return fetch('/api/auth/session/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      }).then(res => {
+        if (!res.ok) {
+          const err = res.json().catch(() => ({ error: 'Request failed' }));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        return res.json();
+      });
     } else {
       body = JSON.stringify({ sessionToken: null });
     }
