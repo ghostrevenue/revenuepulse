@@ -9,6 +9,9 @@ const router = express.Router();
 // HMAC verification for Shopify webhook/callback requests
 function verifyShopifyHmac(query, secret) {
   const { hmac, ...params } = query;
+  if (!hmac || typeof hmac !== 'string' || hmac.length !== 64) {
+    return false; // Shopify HMAC is always exactly 64 hex chars
+  }
   const message = Object.keys(params)
     .sort()
     .map(key => `${key}=${params[key]}`)
@@ -17,7 +20,11 @@ function verifyShopifyHmac(query, secret) {
     .createHmac('sha256', secret)
     .update(message)
     .digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(hmac || ''), Buffer.from(generatedHash));
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(generatedHash));
+  } catch (e) {
+    return false; // Length mismatch or other encoding issues
+  }
 }
 
 // Verify Shopify session token (JWT) — replaces cookie-based auth
@@ -51,7 +58,8 @@ router.post('/session/verify', async (req, res) => {
           return res.status(401).json({ error: 'HMAC verification failed' });
         }
       } catch (e) {
-        return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
+        console.error('[HMAC] verifyShopifyHmac threw:', e.message);
+        return res.status(401).json({ error: 'HMAC verification failed' });
       }
     }
     await db.ensureReady();
@@ -142,17 +150,20 @@ router.get('/partners-start', async (req, res) => {
   if (apiSecret) {
     try {
       const { hmac: hmacToVerify, ...params } = req.query;
+      if (!hmacToVerify || typeof hmacToVerify !== 'string' || hmacToVerify.length !== 64) {
+        return res.status(401).json({ error: 'HMAC verification failed' });
+      }
       const message = Object.keys(params).sort().map(key => `${key}=${params[key]}`).join('&');
       const computedHash = crypto.createHmac('sha256', apiSecret).update(message).digest('hex');
       console.log(`[HMAC] received=${hmacToVerify} computed=${computedHash} message=${message}`);
       console.log(`[HMAC] secret=${apiSecret.slice(0,10)}... secret_len=${apiSecret.length}`);
-      const verified = crypto.timingSafeEqual(Buffer.from(hmacToVerify || ''), Buffer.from(computedHash));
+      const verified = crypto.timingSafeEqual(Buffer.from(hmacToVerify), Buffer.from(computedHash));
       if (!verified) {
         return res.status(401).json({ error: 'HMAC verification failed' });
       }
     } catch (e) {
       console.error('[HMAC] error:', e.message);
-      return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
+      return res.status(401).json({ error: 'HMAC verification failed' });
     }
   }
 
@@ -200,7 +211,7 @@ router.get('/callback', async (req, res) => {
         }
       } catch (e) {
         console.error('HMAC verify threw:', e.message);
-        return res.status(401).json({ error: 'HMAC verification error' });
+        return res.status(401).json({ error: 'HMAC verification failed' });
       }
     }
 
