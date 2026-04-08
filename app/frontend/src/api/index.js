@@ -137,6 +137,12 @@ export const api = {
   // GET /api/dashboard/recent — recent responses (last 5)
   getDashboardRecent: () => apiFetch('/api/dashboard/recent'),
 
+  // GET /api/dashboard/analytics/chart — accept/decline counts and revenue by day for period
+  getAnalyticsChart: (days = 30) => apiFetch(`/api/dashboard/analytics/chart?days=${days}`),
+
+  // GET /api/dashboard/analytics/offers — per-offer performance stats for period
+  getAnalyticsOffers: (days = 30) => apiFetch(`/api/dashboard/analytics/offers?days=${days}`),
+
   // --- BILLING ---
   getPlans: () => apiFetch('/api/billing/plans'),
   getPlan: () => apiFetch('/api/billing/plan'),

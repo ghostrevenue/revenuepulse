@@ -4,10 +4,16 @@ import React from 'react';
  * VisualPreview — renders a live WYSIWYG preview of the upsell offer
  * as the merchant would see it in the customer view.
  * Updates in real-time as form values change.
+ *
+ * Enhanced to support:
+ * - Custom badge text + color
+ * - Countdown timer
+ * - Button text override
+ * - Per-item preview (when passed an itemData object)
  */
-export default function VisualPreview({ form }) {
+export default function VisualPreview({ form, itemData }) {
   const {
-    offer_type: offerType,
+    offer_type: offerType = 'add_product',
     headline,
     message,
     upsell_product_title: productTitle,
@@ -19,6 +25,12 @@ export default function VisualPreview({ form }) {
     warranty_description: warrantyDesc,
     one_time_offer: oneTimeOffer = true,
     confirmation_only: confirmationOnly = true,
+    badge_text: customBadgeText = '',
+    badge_color: customBadgeColor = '#8b5cf6',
+    show_badge: showCustomBadge = false,
+    show_timer: showTimer = false,
+    timer_minutes: timerMinutes = 15,
+    button_text: buttonText = '',
   } = form;
 
   const previewPrice = offerType === 'add_product'
@@ -33,12 +45,30 @@ export default function VisualPreview({ form }) {
   const typeLabel = {
     'add_product': 'Add to Order',
     'discount_code': 'Discount Code',
+    'discount': 'Discount Code',
     'warranty': 'Warranty/Protection',
   }[offerType] || 'Add to Order';
 
+  // Build badge list
+  const badges = [];
+  if (oneTimeOffer) {
+    badges.push({ text: 'One-time offer', bg: '#fef3c7', color: '#92400e' });
+  }
+  if (confirmationOnly) {
+    badges.push({ text: 'Confirmation page only', bg: '#dbeafe', color: '#1e40af' });
+  }
+  if (showCustomBadge && customBadgeText) {
+    badges.push({ text: customBadgeText, bg: customBadgeColor + '33', color: customBadgeColor });
+  }
+
+  const btnLabel = buttonText
+    || (offerType === 'discount' || offerType === 'discount_code' ? 'Get Discount Code' : 'Add to Order');
+
+  // Timer display
+  const timerDisplay = showTimer ? `Offer expires in ${timerMinutes}:00` : null;
+
   return (
     <div className="visual-preview-wrapper">
-      <div className="preview-label">Live Preview</div>
       <div className="live-preview">
         {/* Store header bar */}
         <div className="preview-store-header">
@@ -53,11 +83,25 @@ export default function VisualPreview({ form }) {
 
         <div className="preview-body">
           {/* Badges */}
-          <div className="preview-offer-badges">
-            {oneTimeOffer && <span className="preview-badge one-time">One-time offer</span>}
-            {confirmationOnly && <span className="preview-badge confirm-only">Confirmation page only</span>}
-            <span className="preview-badge social">127 people added this week</span>
-          </div>
+          {badges.length > 0 && (
+            <div className="preview-offer-badges">
+              {badges.map((badge, i) => (
+                <span key={i} className="preview-badge" style={{ background: badge.bg, color: badge.color }}>
+                  {badge.text}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Timer */}
+          {timerDisplay && (
+            <div className="preview-timer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              {timerDisplay}
+            </div>
+          )}
 
           {/* Thanks message */}
           <div className="preview-thanks">Thanks for your order!</div>
@@ -77,7 +121,7 @@ export default function VisualPreview({ form }) {
                   <div className="preview-price">{previewPrice}</div>
                 </div>
               </div>
-            ) : offerType === 'discount_code' ? (
+            ) : (offerType === 'discount' || offerType === 'discount_code') ? (
               <div className="preview-discount">
                 <div className="preview-discount-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="28" height="28">
@@ -111,9 +155,7 @@ export default function VisualPreview({ form }) {
           </div>
 
           {/* CTA Button */}
-          <div className="preview-btn-green">
-            {offerType === 'discount_code' ? 'Get Discount Code' : 'Add to Order'}
-          </div>
+          <div className="preview-btn-green">{btnLabel}</div>
           <div className="preview-skip">No thanks, maybe later</div>
 
           {/* Trust indicators */}
@@ -124,7 +166,7 @@ export default function VisualPreview({ form }) {
       </div>
 
       <style>{`
-        .visual-preview-wrapper { margin-top: 24px; }
+        .visual-preview-wrapper { margin-top: 0; }
         .preview-label { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
         .live-preview { background: #f5f5f5; border-radius: 10px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .preview-store-header { background: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #333; border-bottom: 1px solid #eee; }
@@ -132,9 +174,12 @@ export default function VisualPreview({ form }) {
         .preview-body { padding: 16px; background: #f8f8f8; }
         .preview-offer-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
         .preview-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
-        .preview-badge.one-time { background: #fef3c7; color: #92400e; }
-        .preview-badge.confirm-only { background: #dbeafe; color: #1e40af; }
-        .preview-badge.social { background: #f0fdf4; color: #166534; }
+        .preview-timer {
+          display: flex; align-items: center; gap: 4px;
+          font-size: 11px; font-weight: 700; color: #ef4444;
+          background: rgba(239,68,68,0.08); padding: 4px 8px;
+          border-radius: 4px; margin-bottom: 8px; width: fit-content;
+        }
         .preview-thanks { font-size: 15px; font-weight: 700; color: #333; margin-bottom: 12px; }
         .preview-offer-card { background: #fff; border-radius: 8px; padding: 14px; display: flex; gap: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 12px; }
         .preview-product-row { display: flex; gap: 12px; align-items: flex-start; width: 100%; }

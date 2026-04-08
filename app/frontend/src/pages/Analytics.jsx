@@ -223,12 +223,14 @@ export default function Analytics({ store, appConfig }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortCol, setSortCol] = useState('revenue');
   const [sortDir, setSortDir] = useState('desc');
-  const [mockData, setMockData] = useState(null);
 
-  // Stats from API or fallback
+  // Real data from API
   const [stats, setStats] = useState(null);
   const [offers, setOffers] = useState([]);
   const [recent, setRecent] = useState([]);
+  // Real chart data — keyed by period so switching periods shows correct data
+  const [chartData, setChartData] = useState([]);
+  const [revenueData, setRevenueData] = useState([]);
 
   useEffect(() => {
     if (!store) { setLoading(false); return; }
@@ -238,51 +240,52 @@ export default function Analytics({ store, appConfig }) {
   async function loadData() {
     setLoading(true);
     try {
-      const [statsRes, offersRes, recentRes] = await Promise.all([
-        api.getDashboardStats().catch(() => ({ stats: null })),
-        api.getUpsellOffers().catch(() => ({ offers: [] })),
+      // Fetch all real data in parallel — no fallback to mock
+      const [statsRes, chartRes, offersRes, recentRes] = await Promise.all([
+        api.getDashboardStats().catch(() => null),
+        api.getAnalyticsChart(period).catch(() => ({ chart: [] })),
+        api.getAnalyticsOffers(period).catch(() => ({ offers: [] })),
         api.getDashboardRecent().catch(() => ({ responses: [] })),
       ]);
 
-      if (statsRes.stats) {
-        setStats(statsRes.stats);
-      } else {
-        const mock = buildMockData(period);
-        setMockData(mock);
+      if (statsRes) {
         setStats({
-          total_accepts: mock.responses.filter(r => r.response === 'accepted').length,
-          total_declines: mock.responses.filter(r => r.response === 'declined').length,
-          acceptance_rate: 0,
-          revenue_lifted: mock.responses.reduce((s, r) => s + (r.revenue_added || 0), 0),
-          total_triggered: mock.responses.length,
+          total_accepts: statsRes.accepts || 0,
+          total_declines: statsRes.declines || 0,
+          total_triggered: statsRes.total_responses || 0,
+          revenue_lifted: statsRes.total_revenue_lifted || 0,
+          acceptance_rate: statsRes.acceptance_rate || 0,
         });
       }
 
-      if (offersRes.offers?.length) {
-        setOffers(offersRes.offers);
+      if (chartRes?.chart?.length) {
+        setChartData(chartRes.chart.map(c => ({ date: c.date, accepted: c.accepted, declined: c.declined })));
+        setRevenueData(chartRes.chart.map(c => ({ date: c.date, revenue: c.revenue })));
       } else {
-        // Build mock offers
-        const mock = buildMockData(period);
-        setMockData(mock);
-        setOffers([
-          { id: 1, name: 'Summer Bundle Deal', status: 'published', offer_type: 'add_product', total_triggered: 340, total_accepted: 102, revenue_lifted: 2850.40, trigger_threshold: 50, trigger_threshold_max: null, first_time_customers_only: false },
-          { id: 2, name: 'Warranty Protection', status: 'published', offer_type: 'warranty', total_triggered: 580, total_accepted: 145, revenue_lifted: 1305.00, trigger_threshold: 30, trigger_threshold_max: null, first_time_customers_only: false },
-          { id: 3, name: 'Flash Discount 20%', status: 'draft', offer_type: 'discount_code', total_triggered: 120, total_accepted: 24, revenue_lifted: 720.00, trigger_threshold: 75, trigger_threshold_max: null, first_time_customers_only: true },
-          { id: 4, name: 'Electronics Upsell', status: 'published', offer_type: 'add_product', total_triggered: 890, total_accepted: 178, revenue_lifted: 6230.00, trigger_threshold: 100, trigger_threshold_max: null, first_time_customers_only: false },
-        ]);
+        setChartData([]);
+        setRevenueData([]);
       }
 
-      if (recentRes.responses?.length) {
-        setRecent(recentRes.responses);
+      if (offersRes?.offers?.length) {
+        setOffers(offersRes.offers);
       } else {
-        const mock = buildMockData(period);
-        setMockData(mock);
-        setRecent(mock.responses.slice(0, 20));
+        setOffers([]);
+      }
+
+      if (recentRes?.responses?.length) {
+        setRecent(recentRes.responses.map(r => ({
+          id: r.id,
+          order_id: r.order_id,
+          offer_name: r.headline || r.offer_type || `Offer #${r.offer_id}`,
+          response: r.response,
+          created_at: r.created_at,
+          revenue_added: r.added_revenue || 0,
+        })));
+      } else {
+        setRecent([]);
       }
     } catch (e) {
       console.error(e);
-      const mock = buildMockData(period);
-      setMockData(mock);
     } finally {
       setLoading(false);
     }
@@ -306,9 +309,7 @@ export default function Analytics({ store, appConfig }) {
       return av < bv ? 1 : -1;
     });
 
-  // Chart data from mock or responses
-  const chartData = mockData?.chartData || [];
-  const revenueData = mockData?.revenueData || [];
+  // Chart data from real API calls (chartData and revenueData are set in loadData)
 
   // Compute KPI trends vs last period (mock: assume 5% difference)
   const totalAccepts = Number(stats?.total_accepts || 0);
@@ -370,7 +371,7 @@ export default function Analytics({ store, appConfig }) {
           <div className="kpi-sub">Additional revenue from accepted upsells</div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-label">Acceptance Rate <span className="trend up">↑ 5.2%</span></div>
+          <div className="kpi-label">Acceptance Rate</div>
           <div className="kpi-value">{acceptRate}%</div>
           <div className="kpi-sub">{totalTriggered.toLocaleString()} offers shown</div>
         </div>

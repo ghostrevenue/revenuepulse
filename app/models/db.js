@@ -106,6 +106,8 @@ async function initSqlite() {
       target_first_time_customer INTEGER DEFAULT 0,
       target_customer_tags TEXT,
       target_collection_ids TEXT,
+      accept_path_items TEXT,
+      decline_path_items TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (store_id) REFERENCES stores(id)
@@ -176,6 +178,8 @@ async function initSqlite() {
   addColIfMissing('upsell_offers', 'fallback_for_offer_id', 'INTEGER', null);
   addColIfMissing('upsell_responses', 'added_revenue', 'REAL', 0);
   addColIfMissing('stores', 'upsell_config', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'accept_path_items', 'TEXT', null);
+  addColIfMissing('upsell_offers', 'decline_path_items', 'TEXT', null);
   addColIfMissing('stores', 'scope', 'TEXT', null);
   addColIfMissing('stores', 'access_token', 'TEXT', null);
   addColIfMissing('stores', 'created_at', 'DATETIME', "datetime('now')");
@@ -264,6 +268,8 @@ async function initPostgres() {
       target_first_time_customer INTEGER DEFAULT 0,
       target_customer_tags TEXT,
       target_collection_ids TEXT,
+      accept_path_items JSONB,
+      decline_path_items JSONB,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -412,6 +418,20 @@ async function initPostgres() {
   await pgPool.query(`
     DO $$ BEGIN
       ALTER TABLE upsell_offers ADD COLUMN target_collection_ids TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // Accept/Decline path items (multi-item flow)
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN accept_path_items JSONB;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+  await pgPool.query(`
+    DO $$ BEGIN
+      ALTER TABLE upsell_offers ADD COLUMN decline_path_items JSONB;
     EXCEPTION WHEN duplicate_column THEN NULL;
     END $$;
   `);

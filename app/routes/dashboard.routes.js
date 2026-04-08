@@ -271,4 +271,123 @@ router.get('/ab-groups', verifyShop, async (req, res) => {
   }
 });
 
+// GET /api/dashboard/analytics/chart
+// Returns daily accept/decline counts and revenue for a time period
+router.get('/analytics/chart', verifyShop, async (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startStr = startDate.toISOString();
+
+    // Daily accept/decline counts + revenue
+    const rows = db.usePostgres
+      ? await db.query(`
+          SELECT
+            DATE(r.created_at) as date,
+            COUNT(*) as total,
+            COUNT(CASE WHEN r.response = 'accepted' THEN 1 END) as accepted,
+            COUNT(CASE WHEN r.response = 'declined' THEN 1 END) as declined,
+            COALESCE(SUM(CASE WHEN r.response = 'accepted' THEN r.added_revenue ELSE 0 END), 0) as revenue
+          FROM upsell_responses r
+          WHERE r.store_id = $1 AND r.created_at >= $2
+          GROUP BY DATE(r.created_at)
+          ORDER BY date ASC
+        `, [req.store.id, startStr])
+      : db.prepare(`
+          SELECT
+            DATE(r.created_at) as date,
+            COUNT(*) as total,
+            COUNT(CASE WHEN r.response = 'accepted' THEN 1 END) as accepted,
+            COUNT(CASE WHEN r.response = 'declined' THEN 1 END) as declined,
+            COALESCE(SUM(CASE WHEN r.response = 'accepted' THEN r.added_revenue ELSE 0 END), 0) as revenue
+          FROM upsell_responses r
+          WHERE r.store_id = ? AND r.created_at >= ?
+          GROUP BY DATE(r.created_at)
+          ORDER BY date ASC
+        `).all(req.store.id, startStr);
+
+    const data = db.usePostgres ? rows.rows : rows;
+
+    res.json({
+      chart: data.map(row => ({
+        date: row.date instanceof Date
+          ? row.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : new Date(row.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        accepted: parseInt(row.accepted) || 0,
+        declined: parseInt(row.declined) || 0,
+        revenue: parseFloat(row.revenue) || 0,
+      })),
+      period_days: days,
+    });
+  } catch (e) {
+    console.error('[/dashboard/analytics/chart]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/dashboard/analytics/offers
+// Returns per-offer performance stats (triggered, accepted, declined, revenue) for a time period
+router.get('/analytics/offers', verifyShop, async (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startStr = startDate.toISOString();
+
+    const rows = db.usePostgres
+      ? await db.query(`
+          SELECT
+            r.offer_id,
+            o.offer_type,
+            o.headline,
+            o.status,
+            COUNT(*) as total_triggered,
+            COUNT(CASE WHEN r.response = 'accepted' THEN 1 END) as total_accepted,
+            COUNT(CASE WHEN r.response = 'declined' THEN 1 END) as total_declined,
+            COALESCE(SUM(CASE WHEN r.response = 'accepted' THEN r.added_revenue ELSE 0 END), 0) as revenue_lifted
+          FROM upsell_responses r
+          LEFT JOIN upsell_offers o ON r.offer_id = o.id
+          WHERE r.store_id = $1 AND r.created_at >= $2
+          GROUP BY r.offer_id, o.offer_type, o.headline, o.status
+          ORDER BY revenue_lifted DESC
+        `, [req.store.id, startStr])
+      : db.prepare(`
+          SELECT
+            r.offer_id,
+            o.offer_type,
+            o.headline,
+            o.status,
+            COUNT(*) as total_triggered,
+            COUNT(CASE WHEN r.response = 'accepted' THEN 1 END) as total_accepted,
+            COUNT(CASE WHEN r.response = 'declined' THEN 1 END) as total_declined,
+            COALESCE(SUM(CASE WHEN r.response = 'accepted' THEN r.added_revenue ELSE 0 END), 0) as revenue_lifted
+          FROM upsell_responses r
+          LEFT JOIN upsell_offers o ON r.offer_id = o.id
+          WHERE r.store_id = ? AND r.created_at >= ?
+          GROUP BY r.offer_id, o.offer_type, o.headline, o.status
+          ORDER BY revenue_lifted DESC
+        `).all(req.store.id, startStr);
+
+    const data = db.usePostgres ? rows.rows : rows;
+
+    res.json({
+      offers: data.map(row => ({
+        id: row.offer_id,
+        name: row.headline || `Offer #${row.offer_id}`,
+        offer_type: row.offer_type || 'add_product',
+        status: row.status || 'draft',
+        total_triggered: parseInt(row.total_triggered) || 0,
+        total_accepted: parseInt(row.total_accepted) || 0,
+        total_declined: parseInt(row.total_declined) || 0,
+        revenue_lifted: parseFloat(row.revenue_lifted) || 0,
+      })),
+      period_days: days,
+    });
+  } catch (e) {
+    console.error('[/dashboard/analytics/offers]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

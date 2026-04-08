@@ -167,7 +167,10 @@ router.post('/offers', verifyShop, async (req, res) => {
     target_first_time_customer, target_customer_tags,
     trigger_max_amount, target_collection_ids,
     // Legacy
-    target_tags
+    target_tags,
+    // Multi-item flow paths
+    accept_path_items,
+    decline_path_items
   } = req.body;
 
   if (!offer_type) return res.status(400).json({ error: 'offer_type is required' });
@@ -208,6 +211,14 @@ router.post('/offers', verifyShop, async (req, res) => {
       ? (Array.isArray(target_collection_ids) ? JSON.stringify(target_collection_ids) : target_collection_ids)
       : (target_tags ? target_tags : null); // fallback to legacy target_tags
 
+    // Multi-item flow: serialize accept/decline path items
+    const acceptPathItems = accept_path_items
+      ? (Array.isArray(accept_path_items) ? JSON.stringify(accept_path_items) : accept_path_items)
+      : null;
+    const declinePathItems = decline_path_items
+      ? (Array.isArray(decline_path_items) ? JSON.stringify(decline_path_items) : decline_path_items)
+      : null;
+
     const params = [
       storeId, offer_type,
       trigger_min_amount || 0,
@@ -232,7 +243,9 @@ router.post('/offers', verifyShop, async (req, res) => {
       target_first_time_customer ? 1 : 0,
       targetCustomerTags,
       trigger_max_amount || 0,
-      targetCollectionIds
+      targetCollectionIds,
+      acceptPathItems,
+      declinePathItems
     ];
 
     if (db.usePostgres) {
@@ -245,8 +258,9 @@ router.post('/offers', verifyShop, async (req, res) => {
            include_product_ids, include_collection_ids, include_tags,
            exclude_product_ids, exclude_collection_ids, exclude_tags,
            target_first_time_customer, target_customer_tags,
-           trigger_max_amount, target_collection_ids)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+           trigger_max_amount, target_collection_ids,
+           accept_path_items, decline_path_items)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       `).run(...params);
       const offer = await db.prepare('SELECT * FROM upsell_offers WHERE id = (SELECT MAX(id) FROM upsell_offers WHERE store_id = $1)').get(storeId);
       return res.json({ offer });
@@ -260,8 +274,9 @@ router.post('/offers', verifyShop, async (req, res) => {
            include_product_ids, include_collection_ids, include_tags,
            exclude_product_ids, exclude_collection_ids, exclude_tags,
            target_first_time_customer, target_customer_tags,
-           trigger_max_amount, target_collection_ids)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           trigger_max_amount, target_collection_ids,
+           accept_path_items, decline_path_items)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(...params);
       const offer = db.prepare('SELECT * FROM upsell_offers WHERE id = last_insert_rowid()').get();
       return res.json({ offer });
@@ -300,7 +315,10 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
     target_first_time_customer, target_customer_tags,
     trigger_max_amount, target_collection_ids,
     // Legacy
-    target_tags
+    target_tags,
+    // Multi-item flow paths
+    accept_path_items,
+    decline_path_items
   } = req.body;
 
   try {
@@ -341,6 +359,14 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
       ? (Array.isArray(target_collection_ids) ? JSON.stringify(target_collection_ids) : target_collection_ids)
       : (target_tags ? target_tags : existing.target_collection_ids);
 
+    // Multi-item flow: serialize accept/decline path items
+    const acceptPathItems = accept_path_items !== undefined
+      ? (Array.isArray(accept_path_items) ? JSON.stringify(accept_path_items) : accept_path_items)
+      : existing.accept_path_items;
+    const declinePathItems = decline_path_items !== undefined
+      ? (Array.isArray(decline_path_items) ? JSON.stringify(decline_path_items) : decline_path_items)
+      : existing.decline_path_items;
+
     const params = [
       offer_type ?? existing.offer_type,
       trigger_min_amount ?? existing.trigger_min_amount,
@@ -366,6 +392,8 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
       targetCustomerTags,
       trigger_max_amount ?? existing.trigger_max_amount ?? 0,
       targetCollectionIds,
+      acceptPathItems,
+      declinePathItems,
       req.params.id,
       req.store.id
     ];
@@ -382,8 +410,9 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
           exclude_product_ids = $18, exclude_collection_ids = $19, exclude_tags = $20,
           target_first_time_customer = $21, target_customer_tags = $22,
           trigger_max_amount = $23, target_collection_ids = $24,
+          accept_path_items = $25, decline_path_items = $26,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $25 AND store_id = $26
+        WHERE id = $27 AND store_id = $28
       `).run(...params);
     } else {
       db.prepare(`
@@ -397,6 +426,7 @@ router.put('/offers/:id', verifyShop, async (req, res) => {
           exclude_product_ids = ?, exclude_collection_ids = ?, exclude_tags = ?,
           target_first_time_customer = ?, target_customer_tags = ?,
           trigger_max_amount = ?, target_collection_ids = ?,
+          accept_path_items = ?, decline_path_items = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND store_id = ?
       `).run(...params);

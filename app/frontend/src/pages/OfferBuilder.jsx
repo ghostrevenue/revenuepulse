@@ -1,7 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api/index.js';
 import TargetingSelector from '../components/TargetingSelector.jsx';
-import VisualPreview from '../components/VisualPreview.jsx';
+import OfferEditor from '../components/OfferEditor.jsx';
+
+const MAX_ITEMS = 6;
+
+function generateId() {
+  return 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function makeItem(overrides = {}) {
+  return {
+    id: generateId(),
+    offer_type: 'add_product',
+    headline: 'Wait! Add this to your order',
+    message: 'Get it delivered with your current order — just one click away.',
+    product_id: '',
+    product_title: '',
+    product_price: '',
+    product_image: '',
+    variant_id: '',
+    discount_code: '',
+    discount_percent: '',
+    warranty_price: '',
+    warranty_description: '',
+    warranty_covered: '',
+    badge_text: 'One-time offer',
+    badge_color: '#8b5cf6',
+    show_badge: true,
+    show_timer: false,
+    timer_minutes: 15,
+    button_text: '',
+    ...overrides,
+  };
+}
 
 export default function OfferBuilder({ store, appConfig }) {
   const [offers, setOffers] = useState([]);
@@ -17,54 +49,58 @@ export default function OfferBuilder({ store, appConfig }) {
 
   // Active tab: 'active' | 'archived'
   const [activeTab, setActiveTab] = useState('active');
-
-  // Offer status filter
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  const [form, setForm] = useState({
-    name: '',
-    status: 'draft',
-    // Step 1 — Trigger
-    trigger_threshold: '50',
-    trigger_threshold_max: '',
-    target_products_include: [],
-    target_collections_include: [],
-    target_tags_include: [],
-    target_products_exclude: [],
-    target_collections_exclude: [],
-    target_tags_exclude: [],
-    first_time_customers_only: false,
-    // Step 3 — Content (no separate type step)
-    offer_type: 'add_product',
-    headline: 'Wait! Add this to your order',
-    message: 'Get it delivered with your current order — just one click away.',
-    // Product upsell
-    upsell_product_id: '',
-    upsell_product_title: '',
-    upsell_product_price: '',
-    upsell_product_image: '',
-    // Discount code
-    discount_code: '',
-    discount_amount: '',
-    discount_percent: '',
-    // Warranty
-    warranty_price: '',
-    warranty_description: '',
-    warranty_covered: '',
-    // Urgency
-    one_time_offer: true,
-    confirmation_only: true,
-    // Fallback
-    fallback_offer_id: '',
-  });
+  // Editor state
+  const [editingItem, setEditingItem] = useState(null); // { item, pathType }
+
+  // Form state — 4-step structure
+  const [form, setForm] = useState(getDefaultForm());
+
+  function getDefaultForm() {
+    return {
+      name: '',
+      status: 'draft',
+      // Step 1 — Trigger & Targeting
+      trigger_threshold: '50',
+      trigger_threshold_max: '',
+      target_products_include: [],
+      target_collections_include: [],
+      target_tags_include: [],
+      target_products_exclude: [],
+      target_collections_exclude: [],
+      target_tags_exclude: [],
+      first_time_customers_only: false,
+      // Step 2 — Accept Path (upsells)
+      accept_path_items: [],
+      // Step 3 — Decline Path (downsells)
+      decline_path_items: [],
+      // Legacy / single offer (backwards compat)
+      offer_type: 'add_product',
+      headline: 'Wait! Add this to your order',
+      message: 'Get it delivered with your current order — just one click away.',
+      upsell_product_id: '',
+      upsell_product_title: '',
+      upsell_product_price: '',
+      upsell_product_image: '',
+      discount_code: '',
+      discount_amount: '',
+      discount_percent: '',
+      warranty_price: '',
+      warranty_description: '',
+      warranty_covered: '',
+      one_time_offer: true,
+      confirmation_only: true,
+      fallback_offer_id: '',
+    };
+  }
 
   useEffect(() => {
     if (!store) { setLoading(false); return; }
     loadOffers();
   }, [store]);
 
-  // Scroll step content into view when step changes
   useEffect(() => {
     if (stepContentRef.current) {
       stepContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -84,26 +120,49 @@ export default function OfferBuilder({ store, appConfig }) {
 
   function startEdit(offer) {
     setEditing(offer);
+
+    // Parse accept/decline path items
+    let acceptItems = [];
+    let declineItems = [];
+    try {
+      if (offer.accept_path_items) {
+        const parsed = typeof offer.accept_path_items === 'string'
+          ? JSON.parse(offer.accept_path_items)
+          : offer.accept_path_items;
+        acceptItems = Array.isArray(parsed) ? parsed : [];
+      }
+      if (offer.decline_path_items) {
+        const parsed = typeof offer.decline_path_items === 'string'
+          ? JSON.parse(offer.decline_path_items)
+          : offer.decline_path_items;
+        declineItems = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (e) {}
+
     setForm({
       name: offer.name || '',
       status: offer.status || (offer.active ? 'published' : 'draft'),
-      trigger_threshold: String(offer.trigger_threshold || '50'),
-      trigger_threshold_max: String(offer.trigger_threshold_max || ''),
-      target_products_include: offer.target_products_include || [],
-      target_collections_include: offer.target_collections_include || [],
-      target_tags_include: offer.target_tags_include || [],
-      target_products_exclude: offer.target_products_exclude || [],
-      target_collections_exclude: offer.target_collections_exclude || [],
-      target_tags_exclude: offer.target_tags_exclude || [],
-      first_time_customers_only: !!offer.first_time_customers_only,
+      trigger_threshold: String(offer.trigger_min_amount || offer.trigger_threshold || '50'),
+      trigger_threshold_max: String(offer.trigger_max_amount || ''),
+      target_products_include: parseIdArray(offer.include_product_ids),
+      target_collections_include: parseIdArray(offer.include_collection_ids),
+      target_tags_include: parseTagArray(offer.include_tags),
+      target_products_exclude: parseIdArray(offer.exclude_product_ids),
+      target_collections_exclude: parseIdArray(offer.exclude_collection_ids),
+      target_tags_exclude: parseTagArray(offer.exclude_tags),
+      first_time_customers_only: !!offer.first_time_customer || !!offer.target_first_time_customer,
+      // New multi-item paths
+      accept_path_items: acceptItems,
+      decline_path_items: declineItems,
+      // Legacy
       offer_type: offer.offer_type || 'add_product',
       headline: offer.headline || 'Wait! Add this to your order',
       message: offer.message || 'Get it delivered with your current order — just one click away.',
       upsell_product_id: offer.upsell_product_id || '',
-      upsell_product_title: offer.upsell_product_title || '',
+      upsell_product_title: offer.product_title || offer.upsell_product_title || '',
       upsell_product_price: offer.upsell_product_price || '',
       upsell_product_image: offer.upsell_product_image || '',
-      discount_code: offer.discount_code || '',
+      discount_code: offer.discount_code || offer.upsell_discount_code || '',
       discount_amount: offer.discount_amount || '',
       discount_percent: offer.discount_percent ? String(offer.discount_percent) : '',
       warranty_price: offer.warranty_price || '',
@@ -111,47 +170,127 @@ export default function OfferBuilder({ store, appConfig }) {
       warranty_covered: offer.warranty_covered || '',
       one_time_offer: offer.one_time_offer !== false,
       confirmation_only: offer.confirmation_only !== false,
-      fallback_offer_id: offer.fallback_offer_id || '',
+      fallback_offer_id: offer.fallback_for_offer_id || '',
     });
     setStep(1);
     setShowForm(true);
+  }
+
+  function parseIdArray(field) {
+    if (!field) return [];
+    if (Array.isArray(field)) return field;
+    try {
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed.map(id => ({ id: String(id) })) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function parseTagArray(field) {
+    if (!field) return [];
+    if (Array.isArray(field)) return field;
+    try {
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   function closeForm() {
     setShowForm(false);
     setEditing(null);
     setStep(1);
-    setForm({
-      name: '', status: 'draft', trigger_threshold: '50', trigger_threshold_max: '',
-      target_products_include: [], target_collections_include: [], target_tags_include: [],
-      target_products_exclude: [], target_collections_exclude: [], target_tags_exclude: [],
-      first_time_customers_only: false,
-      offer_type: 'add_product', headline: 'Wait! Add this to your order',
-      message: 'Get it delivered with your current order — just one click away.',
-      upsell_product_id: '', upsell_product_title: '', upsell_product_price: '', upsell_product_image: '',
-      discount_code: '', discount_amount: '', discount_percent: '',
-      warranty_price: '', warranty_description: '', warranty_covered: '',
-      one_time_offer: true, confirmation_only: true, fallback_offer_id: '',
-    });
+    setForm(getDefaultForm());
+    setEditingItem(null);
+  }
+
+  // ── Accept Path item management ────────────────────────────────────────────
+  function addAcceptItem() {
+    if (form.accept_path_items.length >= MAX_ITEMS) return;
+    setForm(f => ({
+      ...f,
+      accept_path_items: [...f.accept_path_items, makeItem({ offer_type: 'add_product' })],
+    }));
+  }
+
+  function updateAcceptItem(id, updated) {
+    setForm(f => ({
+      ...f,
+      accept_path_items: f.accept_path_items.map(item => item.id === id ? { ...item, ...updated } : item),
+    }));
+  }
+
+  function removeAcceptItem(id) {
+    setForm(f => ({
+      ...f,
+      accept_path_items: f.accept_path_items.filter(item => item.id !== id),
+    }));
+  }
+
+  function openEditAcceptItem(item) {
+    setEditingItem({ item, pathType: 'upsell' });
+  }
+
+  // ── Decline Path item management ────────────────────────────────────────────
+  function addDeclineItem() {
+    if (form.decline_path_items.length >= MAX_ITEMS) return;
+    setForm(f => ({
+      ...f,
+      decline_path_items: [...f.decline_path_items, makeItem({ offer_type: 'add_product' })],
+    }));
+  }
+
+  function updateDeclineItem(id, updated) {
+    setForm(f => ({
+      ...f,
+      decline_path_items: f.decline_path_items.map(item => item.id === id ? { ...item, ...updated } : item),
+    }));
+  }
+
+  function removeDeclineItem(id) {
+    setForm(f => ({
+      ...f,
+      decline_path_items: f.decline_path_items.filter(item => item.id !== id),
+    }));
+  }
+
+  function openEditDeclineItem(item) {
+    setEditingItem({ item, pathType: 'downsell' });
+  }
+
+  function handleEditorSave(updatedItem) {
+    if (editingItem?.pathType === 'upsell') {
+      updateAcceptItem(editingItem.item.id, updatedItem);
+    } else {
+      updateDeclineItem(editingItem.item.id, updatedItem);
+    }
+    setEditingItem(null);
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!store) return;
 
+    // Determine offer type from first accept item or legacy
+    const primaryType = form.accept_path_items.length > 0
+      ? form.accept_path_items[0].offer_type
+      : form.offer_type;
+
     const payload = {
       name: form.name || null,
       status: form.status,
-      offer_type: form.offer_type,
-      trigger_threshold: parseFloat(form.trigger_threshold) || 0,
-      trigger_threshold_max: form.trigger_threshold_max ? parseFloat(form.trigger_threshold_max) : null,
-      target_products_include: form.target_products_include.length ? form.target_products_include.map(p => p.id) : null,
-      target_collections_include: form.target_collections_include.length ? form.target_collections_include.map(c => c.id) : null,
+      offer_type: primaryType,
+      trigger_min_amount: parseFloat(form.trigger_threshold) || 0,
+      trigger_max_amount: form.trigger_threshold_max ? parseFloat(form.trigger_threshold_max) : null,
+      target_products_include: form.target_products_include.length ? form.target_products_include.map(p => p.id || p) : null,
+      target_collections_include: form.target_collections_include.length ? form.target_collections_include.map(c => c.id || c) : null,
       target_tags_include: form.target_tags_include.length ? form.target_tags_include : null,
-      target_products_exclude: form.target_products_exclude.length ? form.target_products_exclude.map(p => p.id) : null,
-      target_collections_exclude: form.target_collections_exclude.length ? form.target_collections_exclude.map(c => c.id) : null,
+      target_products_exclude: form.target_products_exclude.length ? form.target_products_exclude.map(p => p.id || p) : null,
+      target_collections_exclude: form.target_collections_exclude.length ? form.target_collections_exclude.map(c => c.id || c) : null,
       target_tags_exclude: form.target_tags_exclude.length ? form.target_tags_exclude : null,
-      first_time_customers_only: form.first_time_customers_only,
+      target_first_time_customer: form.first_time_customers_only,
       headline: form.headline || null,
       message: form.message || null,
       upsell_product_id: form.upsell_product_id || null,
@@ -166,7 +305,10 @@ export default function OfferBuilder({ store, appConfig }) {
       warranty_covered: form.warranty_covered || null,
       one_time_offer: form.one_time_offer,
       confirmation_only: form.confirmation_only,
-      fallback_offer_id: form.fallback_offer_id || null,
+      fallback_for_offer_id: form.fallback_offer_id || null,
+      // New multi-item flow paths
+      accept_path_items: form.accept_path_items.length ? form.accept_path_items : null,
+      decline_path_items: form.decline_path_items.length ? form.decline_path_items : null,
     };
 
     try {
@@ -246,7 +388,6 @@ export default function OfferBuilder({ store, appConfig }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Filter offers by tab
   const visibleOffers = offers.filter(o => {
     if (activeTab === 'archived') return o.status === 'archived';
     return o.status !== 'archived';
@@ -258,7 +399,6 @@ export default function OfferBuilder({ store, appConfig }) {
     return true;
   });
 
-  // Fallback options
   const fallbackOptions = offers.filter(o => o.id !== editing?.id && o.status !== 'archived');
 
   function getStatusBadge(status) {
@@ -272,20 +412,101 @@ export default function OfferBuilder({ store, appConfig }) {
   }
 
   function getTypeLabel(type) {
-    return { add_product: 'Add to Order', discount_code: 'Discount', warranty: 'Warranty' }[type] || type;
+    return { add_product: 'Add to Order', discount_code: 'Discount', discount: 'Discount', warranty: 'Warranty' }[type] || type;
   }
 
   function getTriggerSummary(offer) {
     const parts = [];
-    if (offer.trigger_threshold) parts.push(`$${offer.trigger_threshold}+`);
-    if (offer.target_products_include?.length) parts.push(`${offer.target_products_include.length} products`);
-    if (offer.target_collections_include?.length) parts.push(`${offer.target_collections_include.length} collections`);
-    if (offer.target_tags_include?.length) parts.push(`${offer.target_tags_include.length} tags`);
-    if (offer.first_time_customers_only) parts.push('First-time');
+    if (offer.trigger_min_amount || offer.trigger_threshold) parts.push(`$${offer.trigger_min_amount || offer.trigger_threshold}+`);
+    if (offer.include_product_ids) {
+      try { const arr = JSON.parse(offer.include_product_ids); if (arr.length) parts.push(`${arr.length} products`); } catch {}
+    }
+    if (offer.include_collection_ids) {
+      try { const arr = JSON.parse(offer.include_collection_ids); if (arr.length) parts.push(`${arr.length} collections`); } catch {}
+    }
+    if (offer.include_tags) {
+      try { const arr = JSON.parse(offer.include_tags); if (arr.length) parts.push(`${arr.length} tags`); } catch {}
+    }
+    if (offer.target_first_time_customer) parts.push('First-time');
     return parts.length ? parts.join(', ') : 'All orders';
   }
 
-  const previewForm = form;
+  function getPathCount(offer) {
+    let acceptCount = 0, declineCount = 0;
+    try {
+      if (offer.accept_path_items) {
+        const arr = typeof offer.accept_path_items === 'string' ? JSON.parse(offer.accept_path_items) : offer.accept_path_items;
+        acceptCount = Array.isArray(arr) ? arr.length : 0;
+      }
+      if (offer.decline_path_items) {
+        const arr = typeof offer.decline_path_items === 'string' ? JSON.parse(offer.decline_path_items) : offer.decline_path_items;
+        declineCount = Array.isArray(arr) ? arr.length : 0;
+      }
+    } catch {}
+    return { acceptCount, declineCount };
+  }
+
+  // ── Step labels ─────────────────────────────────────────────────────────────
+  const STEP_LABELS = [
+    { n: 1, label: 'Trigger & Targeting' },
+    { n: 2, label: 'Accept Path (Upsells)' },
+    { n: 3, label: 'Decline Path (Downsells)' },
+    { n: 4, label: 'Review & Save' },
+  ];
+
+  // ── Render helpers ───────────────────────────────────────────────────────────
+  function renderItemCard(item, pathType, onEdit, onRemove) {
+    const isUpsell = pathType === 'upsell';
+    const color = isUpsell ? '#8b5cf6' : '#ef4444';
+    const bg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
+    const typeLabel = { add_product: 'Add to Order', discount: 'Discount', warranty: 'Warranty' }[item.offer_type] || item.offer_type;
+    const price = item.offer_type === 'add_product'
+      ? (item.product_price ? `+$${parseFloat(item.product_price).toFixed(2)}` : '')
+      : item.offer_type === 'warranty'
+      ? (item.warranty_price ? `+$${parseFloat(item.warranty_price)}` : '')
+      : item.discount_percent ? `${item.discount_percent}% OFF` : '';
+
+    return (
+      <div key={item.id} className="flow-item-card" style={{ borderColor: color + '40', background: bg }}>
+        <div className="flow-item-card-header">
+          <span className="flow-item-type" style={{ color }}>{typeLabel}</span>
+          <div className="flow-item-actions">
+            <button className="btn-icon" title="Edit" onClick={() => onEdit(item)}
+              style={{ borderColor: color + '40', color }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+            <button className="btn-icon danger" title="Remove" onClick={() => onRemove(item.id)}
+              style={{ color: '#ef4444' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="flow-item-card-body">
+          {item.product_image && (
+            <img src={item.product_image} alt="" className="flow-item-img" />
+          )}
+          <div className="flow-item-info">
+            <div className="flow-item-headline">{item.headline || 'No headline'}</div>
+            <div className="flow-item-message">{item.message || ''}</div>
+            {price && <div className="flow-item-price" style={{ color }}>{price}</div>}
+          </div>
+        </div>
+        {item.show_timer && (
+          <div className="flow-item-timer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            {item.timer_minutes}:00
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!store) {
     return (
@@ -307,27 +528,25 @@ export default function OfferBuilder({ store, appConfig }) {
 
   return (
     <div className="offer-builder">
+      {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Offers</h1>
           <p className="page-subtitle">Create and manage your post-purchase upsell offers</p>
         </div>
-        <button className="btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
+        <button className="btn-primary" onClick={() => { setEditing(null); setForm(getDefaultForm()); setShowForm(true); }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Create New Offer
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* ── Tabs ─────────────────────────────────────────────────────── */}
       <div className="offers-tabs">
-        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>
-          Active Offers
-        </button>
-        <button className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`} onClick={() => setActiveTab('archived')}>
-          Archived
-        </button>
+        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>Active Offers</button>
+        <button className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`} onClick={() => setActiveTab('archived')}>Archived</button>
       </div>
 
+      {/* ── Offer Grid ───────────────────────────────────────────────── */}
       {visibleOffers.length === 0 ? (
         <div className="card empty-offers">
           <div className="empty-icon">
@@ -347,18 +566,23 @@ export default function OfferBuilder({ store, appConfig }) {
           {visibleOffers.map(offer => {
             const rate = offer.total_triggered > 0 ? ((offer.total_accepted / offer.total_triggered) * 100).toFixed(1) : '0.0';
             const revenue = offer.revenue_lifted || 0;
+            const { acceptCount, declineCount } = getPathCount(offer);
             return (
               <div key={offer.id} className="offer-card">
                 <div className="offer-card-header">
                   <div className="offer-card-name">{offer.name || offer.headline || `Offer #${offer.id}`}</div>
                   {getStatusBadge(offer.status)}
                 </div>
-
                 <div className="offer-card-meta">
                   <span className={`type-badge ${offer.offer_type}`}>{getTypeLabel(offer.offer_type)}</span>
                   <span className="trigger-summary">{getTriggerSummary(offer)}</span>
                 </div>
-
+                {(acceptCount > 0 || declineCount > 0) && (
+                  <div className="offer-card-paths">
+                    {acceptCount > 0 && <span className="path-count upsell">{acceptCount} upsell{acceptCount !== 1 ? 's' : ''}</span>}
+                    {declineCount > 0 && <span className="path-count downsell">{declineCount} downsell{declineCount !== 1 ? 's' : ''}</span>}
+                  </div>
+                )}
                 <div className="offer-card-stats">
                   <div className="offer-stat">
                     <div className="offer-stat-label">Accept Rate</div>
@@ -372,7 +596,6 @@ export default function OfferBuilder({ store, appConfig }) {
                     <div className="offer-stat-value revenue">${revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   </div>
                 </div>
-
                 <div className="offer-card-actions">
                   <button className="btn-icon" title="Edit" onClick={() => startEdit(offer)}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
@@ -380,17 +603,14 @@ export default function OfferBuilder({ store, appConfig }) {
                       <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
                   </button>
-                  <button className="btn-icon" title={offer.status === 'published' ? 'Unpublish' : 'Publish'}
-                    onClick={() => togglePublish(offer)}>
+                  <button className="btn-icon" title={offer.status === 'published' ? 'Unpublish' : 'Publish'} onClick={() => togglePublish(offer)}>
                     {offer.status === 'published' ? (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
-                        <line x1="1" y1="1" x2="23" y2="23" />
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
                       </svg>
                     ) : (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                       </svg>
                     )}
                   </button>
@@ -409,9 +629,7 @@ export default function OfferBuilder({ store, appConfig }) {
                   )}
                   <button className="btn-icon" title="Copy preview link" onClick={() => copyPreviewLink(offer.id)}>
                     {copied ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" width="14" height="14">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" width="14" height="14"><polyline points="20 6 9 17 4 12" /></svg>
                     ) : (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                         <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
@@ -419,7 +637,7 @@ export default function OfferBuilder({ store, appConfig }) {
                       </svg>
                     )}
                   </button>
-                  {!offer.ab_test_id && (
+                  {!offer.ab_variant_group_id && (
                     <button className="btn-icon ab-btn" title="A/B Test" onClick={() => openABTestModal(offer)}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
                         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" />
@@ -433,7 +651,7 @@ export default function OfferBuilder({ store, appConfig }) {
         </div>
       )}
 
-      {/* A/B Test Modal */}
+      {/* ── A/B Test Modal ───────────────────────────────────────────── */}
       {showABModal && abVariantA && (
         <div className="modal-overlay" onClick={() => setShowABModal(false)}>
           <div className="modal ab-modal" onClick={e => e.stopPropagation()}>
@@ -489,15 +707,15 @@ export default function OfferBuilder({ store, appConfig }) {
         </div>
       )}
 
-      {/* Offer Builder Modal */}
+      {/* ── Offer Builder Modal ─────────────────────────────────────────── */}
       {showForm && (
         <div className="modal-overlay" onClick={closeForm}>
-          <div className="modal builder-modal wide-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal builder-modal super-wide-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Offer' : 'Create New Offer'}</h2>
               <div className="modal-header-actions">
                 {editing && editing.status === 'draft' && (
-                  <button className="btn-publish" onClick={() => { setForm(f => ({ ...f, status: 'published' })); }}>
+                  <button className="btn-publish" onClick={() => setForm(f => ({ ...f, status: 'published' }))}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                     </svg>
@@ -505,7 +723,7 @@ export default function OfferBuilder({ store, appConfig }) {
                   </button>
                 )}
                 {editing && editing.status === 'published' && (
-                  <button className="btn-unpublish" onClick={() => { setForm(f => ({ ...f, status: 'draft' })); }}>
+                  <button className="btn-unpublish" onClick={() => setForm(f => ({ ...f, status: 'draft' }))}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
                       <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
                     </svg>
@@ -518,13 +736,54 @@ export default function OfferBuilder({ store, appConfig }) {
               </div>
             </div>
 
-            {/* Step nav — now 2 steps: Trigger+Targeting and Content */}
+            {/* 4-Step Navigation */}
             <div className="steps-nav">
-              <div className={`step-dot ${step >= 1 ? 'active' : ''}`}><span>1</span>Trigger & Targeting</div>
-              <div className={`step-dot ${step >= 2 ? 'active' : ''}`}><span>2</span>Content</div>
+              {STEP_LABELS.map(s => (
+                <div key={s.n} className={`step-dot ${step >= s.n ? 'active' : ''}`}>
+                  <span>{s.n}</span>
+                  {s.label}
+                </div>
+              ))}
             </div>
 
+            {/* Flow diagram: accept/decline visual at top of steps 2-4 */}
+            {step >= 2 && (
+              <div className="flow-diagram">
+                <div className="flow-trigger">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                  </svg>
+                  Order meets trigger
+                </div>
+                <div className="flow-branch-arrow">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                    <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
+                  </svg>
+                </div>
+                <div className="flow-branches">
+                  <div className="flow-branch accept-branch">
+                    <div className="flow-branch-label">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="12" height="12">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Accept ({form.accept_path_items.length}/{MAX_ITEMS})
+                    </div>
+                  </div>
+                  <div className="flow-branch-or">or</div>
+                  <div className="flow-branch decline-branch">
+                    <div className="flow-branch-label">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="12" height="12">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                      Decline ({form.decline_path_items.length}/{MAX_ITEMS})
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="builder-form">
+              {/* ── Step 1: Trigger & Targeting ── */}
               {step === 1 && (
                 <div className="step-content" ref={stepContentRef}>
                   <h3 className="step-title">Set Offer Triggers & Targeting</h3>
@@ -536,7 +795,6 @@ export default function OfferBuilder({ store, appConfig }) {
                       onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Summer Flash Sale" />
                   </div>
 
-                  {/* Order amount */}
                   <div className="form-row">
                     <div className="form-group">
                       <label className="form-label">Minimum Order Amount ($)</label>
@@ -561,7 +819,6 @@ export default function OfferBuilder({ store, appConfig }) {
                     </label>
                   </div>
 
-                  {/* Targeting — Include */}
                   <div className="targeting-section">
                     <div className="targeting-section-header">
                       <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" width="14" height="14">
@@ -580,7 +837,6 @@ export default function OfferBuilder({ store, appConfig }) {
                       onChange={vals => setForm({ ...form, target_tags_include: vals })} />
                   </div>
 
-                  {/* Targeting — Exclude */}
                   <div className="targeting-section" style={{ marginTop: '8px' }}>
                     <div className="targeting-section-header">
                       <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" width="14" height="14">
@@ -598,194 +854,236 @@ export default function OfferBuilder({ store, appConfig }) {
                       values={form.target_tags_exclude}
                       onChange={vals => setForm({ ...form, target_tags_exclude: vals })} />
                   </div>
-
-                  {/* Fallback */}
-                  <div className="form-group fallback-group">
-                    <label className="form-label">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                      If declined, show this offer <span className="optional">(optional)</span>
-                    </label>
-                    <select className="form-input" value={form.fallback_offer_id}
-                      onChange={e => setForm({ ...form, fallback_offer_id: e.target.value })}>
-                      <option value="">No fallback (show discount code)</option>
-                      {fallbackOptions.map(o => (
-                        <option key={o.id} value={o.id}>{o.name || o.headline || `Offer #${o.id}`}</option>
-                      ))}
-                    </select>
-                    <span className="form-hint">When customer declines, show a different offer instead of discount code</span>
-                  </div>
                 </div>
               )}
 
+              {/* ── Step 2: Accept Path ── */}
               {step === 2 && (
                 <div className="step-content" ref={stepContentRef}>
-                  <div className="content-editor">
-                    {/* Left — Form fields */}
-                    <div className="content-editor-left">
-                      <h3 className="step-title">Offer Content</h3>
-                      <p className="step-desc">Write the message and configure the upsell type.</p>
+                  <h3 className="step-title">Accept Path — Upsell Offers</h3>
+                  <p className="step-desc">
+                    If the customer <strong style={{ color: '#22c55e' }}>accepts</strong>, show up to {MAX_ITEMS} upsell offers.
+                    Click any offer to edit its content and preview.
+                  </p>
 
-                      {/* Upsell type compact selector */}
-                      <div className="upsell-type-selector">
-                        {['add_product', 'discount_code', 'warranty'].map(type => (
-                          <div key={type}
-                            className={`upsell-type-btn ${form.offer_type === type ? 'active' : ''}`}
-                            onClick={() => setForm({ ...form, offer_type: type })}>
-                            {type === 'add_product' && (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                                <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" />
-                              </svg>
-                            )}
-                            {type === 'warranty' && (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                              </svg>
-                            )}
-                            {type === 'discount_code' && (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                                <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-                              </svg>
-                            )}
-                            <span>{type === 'add_product' ? 'Add to Order' : type === 'warranty' ? 'Warranty' : 'Discount Code'}</span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="flow-path-section">
+                    <div className="flow-path-header accept-path">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="16" height="16">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Accept Path</span>
+                      <span className="flow-path-count">{form.accept_path_items.length}/{MAX_ITEMS}</span>
+                    </div>
 
-                      {/* Headline & Message */}
-                      <div className="form-group">
-                        <label className="form-label">Headline</label>
-                        <input className="form-input" type="text" value={form.headline}
-                          onChange={e => setForm({ ...form, headline: e.target.value })}
-                          placeholder="Wait! Add this to your order" />
-                      </div>
-
-                      <div className="form-group">
-                        <label className="form-label">Message / Description</label>
-                        <textarea className="form-input" rows={3} value={form.message}
-                          onChange={e => setForm({ ...form, message: e.target.value })}
-                          placeholder="Get it delivered with your current order — just one click away." />
-                      </div>
-
-                      {/* Type-specific fields */}
-                      {form.offer_type === 'add_product' && (
-                        <div className="type-fields">
-                          <div className="form-group">
-                            <label className="form-label">Product Search</label>
-                            <input className="form-input" type="text" value={form.upsell_product_title}
-                              onChange={e => setForm({ ...form, upsell_product_title: e.target.value })}
-                              placeholder="Search Shopify products..." />
-                          </div>
-                          <div className="form-row">
-                            <div className="form-group">
-                              <label className="form-label">Price ($)</label>
-                              <input className="form-input" type="number" step="0.01" value={form.upsell_product_price}
-                                onChange={e => setForm({ ...form, upsell_product_price: e.target.value })} placeholder="24.99" />
-                            </div>
-                            <div className="form-group">
-                              <label className="form-label">Product Image URL <span className="optional">(optional)</span></label>
-                              <input className="form-input" type="text" value={form.upsell_product_image}
-                                onChange={e => setForm({ ...form, upsell_product_image: e.target.value })}
-                                placeholder="https://cdn.shopify.com/..." />
-                            </div>
-                          </div>
-                        </div>
+                    <div className="flow-items-grid">
+                      {form.accept_path_items.map(item =>
+                        renderItemCard(item, 'upsell', openEditAcceptItem, removeAcceptItem)
                       )}
 
-                      {form.offer_type === 'discount_code' && (
-                        <div className="type-fields">
-                          <div className="form-row">
-                            <div className="form-group">
-                              <label className="form-label">Discount Code</label>
-                              <input className="form-input" type="text" value={form.discount_code}
-                                onChange={e => setForm({ ...form, discount_code: e.target.value })}
-                                placeholder="SAVE20" />
-                            </div>
-                            <div className="form-group">
-                              <label className="form-label">Discount Value</label>
-                              <input className="form-input" type="number" value={form.discount_percent}
-                                onChange={e => setForm({ ...form, discount_percent: e.target.value })}
-                                placeholder="20" />
-                              <span className="form-hint">Enter % or $ amount</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {form.offer_type === 'warranty' && (
-                        <div className="type-fields warranty-fields">
-                          <div className="form-row">
-                            <div className="form-group">
-                              <label className="form-label">Warranty Price ($)</label>
-                              <input className="form-input" type="number" step="0.01" value={form.warranty_price}
-                                onChange={e => setForm({ ...form, warranty_price: e.target.value })} placeholder="9.99" />
-                            </div>
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">Description</label>
-                            <input className="form-input" type="text" value={form.warranty_description}
-                              onChange={e => setForm({ ...form, warranty_description: e.target.value })}
-                              placeholder="Extended protection plan" />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">What's Covered</label>
-                            <textarea className="form-input" rows={2} value={form.warranty_covered}
-                              onChange={e => setForm({ ...form, warranty_covered: e.target.value })}
-                              placeholder="Manufacturing defects, malfunctions, accidental damage" />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Urgency options */}
-                      <div className="urgency-options">
-                        <div className="urgency-title">Urgency Options</div>
-                        <label className="toggle-label">
-                          <span>One-time offer badge</span>
-                          <label className="toggle">
-                            <input type="checkbox" checked={form.one_time_offer}
-                              onChange={e => setForm({ ...form, one_time_offer: e.target.checked })} />
-                            <span className="toggle-slider" />
-                          </label>
-                        </label>
-                        <label className="toggle-label">
-                          <span>Show on confirmation page only</span>
-                          <label className="toggle">
-                            <input type="checkbox" checked={form.confirmation_only}
-                              onChange={e => setForm({ ...form, confirmation_only: e.target.checked })} />
-                            <span className="toggle-slider" />
-                          </label>
-                        </label>
-                      </div>
-
-                      {/* Preview link */}
-                      {editing && (
-                        <div className="form-group preview-link-group">
-                          <label className="form-label">Preview Link</label>
-                          <div className="preview-link-row">
-                            <input className="form-input preview-link-input" type="text" readOnly
-                              value={`${window.location.origin}${window.location.pathname}#/upsell-preview/${editing.id}`} />
-                            <button type="button" className="btn-copy" onClick={() => copyPreviewLink(editing.id)}>
-                              {copied ? '✓ Copied' : 'Copy Link'}
-                            </button>
-                          </div>
-                        </div>
+                      {form.accept_path_items.length < MAX_ITEMS && (
+                        <button type="button" className="flow-add-card" onClick={addAcceptItem}
+                          style={{ borderColor: 'rgba(139,92,246,0.3)', background: 'rgba(139,92,246,0.04)' }}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.5" width="20" height="20">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          <span>Add Upsell Offer</span>
+                        </button>
                       )}
                     </div>
 
-                    {/* Right — Live Visual Preview */}
-                    <div className="content-editor-right">
-                      <VisualPreview form={previewForm} />
-                    </div>
+                    {form.accept_path_items.length === 0 && (
+                      <div className="flow-empty-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="32" height="32" style={{ color: '#3f3f46' }}>
+                          <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                          <line x1="7" y1="7" x2="7.01" y2="7" />
+                        </svg>
+                        <p>No upsell offers yet. Add your first one above.</p>
+                        <p className="flow-empty-sub">These offers appear when the customer accepts the initial offer.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              {/* ── Step 3: Decline Path ── */}
+              {step === 3 && (
+                <div className="step-content" ref={stepContentRef}>
+                  <h3 className="step-title">Decline Path — Downsell Offers</h3>
+                  <p className="step-desc">
+                    If the customer <strong style={{ color: '#ef4444' }}>declines</strong>, show up to {MAX_ITEMS} downsell offers.
+                    Click any offer to edit its content and preview.
+                  </p>
+
+                  <div className="flow-path-section">
+                    <div className="flow-path-header decline-path">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="16" height="16">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                      <span>Decline Path</span>
+                      <span className="flow-path-count">{form.decline_path_items.length}/{MAX_ITEMS}</span>
+                    </div>
+
+                    <div className="flow-items-grid">
+                      {form.decline_path_items.map(item =>
+                        renderItemCard(item, 'downsell', openEditDeclineItem, removeDeclineItem)
+                      )}
+
+                      {form.decline_path_items.length < MAX_ITEMS && (
+                        <button type="button" className="flow-add-card" onClick={addDeclineItem}
+                          style={{ borderColor: 'rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.04)' }}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="20" height="20">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                          <span>Add Downsell Offer</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {form.decline_path_items.length === 0 && (
+                      <div className="flow-empty-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="32" height="32" style={{ color: '#3f3f46' }}>
+                          <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                          <line x1="7" y1="7" x2="7.01" y2="7" />
+                        </svg>
+                        <p>No downsell offers yet. Add your first one above.</p>
+                        <p className="flow-empty-sub">These offers appear when the customer declines the initial offer.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 4: Review & Save ── */}
+              {step === 4 && (
+                <div className="step-content" ref={stepContentRef}>
+                  <h3 className="step-title">Review & Save</h3>
+                  <p className="step-desc">Review your offer setup before saving.</p>
+
+                  <div className="review-grid">
+                    {/* Trigger Summary */}
+                    <div className="review-card">
+                      <div className="review-card-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" width="14" height="14">
+                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                        </svg>
+                        Trigger & Targeting
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">Name</span>
+                        <span className="review-value">{form.name || '(unnamed)'}</span>
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">Order Amount</span>
+                        <span className="review-value">
+                          ${form.trigger_threshold || 0}
+                          {form.trigger_threshold_max ? ` – $${form.trigger_threshold_max}` : '+'}
+                        </span>
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">First-time only</span>
+                        <span className="review-value">{form.first_time_customers_only ? 'Yes' : 'No'}</span>
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">Include Products</span>
+                        <span className="review-value">{form.target_products_include.length} products</span>
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">Include Collections</span>
+                        <span className="review-value">{form.target_collections_include.length} collections</span>
+                      </div>
+                      <div className="review-row">
+                        <span className="review-label">Include Tags</span>
+                        <span className="review-value">{form.target_tags_include.length} tags</span>
+                      </div>
+                    </div>
+
+                    {/* Accept Path Summary */}
+                    <div className="review-card">
+                      <div className="review-card-title" style={{ color: '#22c55e' }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="14" height="14">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Accept Path — {form.accept_path_items.length} upsell{form.accept_path_items.length !== 1 ? 's' : ''}
+                      </div>
+                      {form.accept_path_items.length === 0 ? (
+                        <div className="review-empty">No upsell offers configured</div>
+                      ) : (
+                        form.accept_path_items.map((item, i) => (
+                          <div key={item.id} className="review-item">
+                            <span className="review-item-num">{i + 1}</span>
+                            <div className="review-item-info">
+                              <div className="review-item-headline">{item.headline}</div>
+                              <div className="review-item-meta">
+                                {item.offer_type === 'add_product' ? 'Add to Order' : item.offer_type === 'warranty' ? 'Warranty' : 'Discount'}
+                                {item.product_price ? ` · $${parseFloat(item.product_price).toFixed(2)}` : ''}
+                                {item.show_timer ? ` · ⏱ ${item.timer_minutes}min` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Decline Path Summary */}
+                    <div className="review-card">
+                      <div className="review-card-title" style={{ color: '#ef4444' }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="14" height="14">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                        Decline Path — {form.decline_path_items.length} downsell{form.decline_path_items.length !== 1 ? 's' : ''}
+                      </div>
+                      {form.decline_path_items.length === 0 ? (
+                        <div className="review-empty">No downsell offers configured</div>
+                      ) : (
+                        form.decline_path_items.map((item, i) => (
+                          <div key={item.id} className="review-item">
+                            <span className="review-item-num">{i + 1}</span>
+                            <div className="review-item-info">
+                              <div className="review-item-headline">{item.headline}</div>
+                              <div className="review-item-meta">
+                                {item.offer_type === 'add_product' ? 'Add to Order' : item.offer_type === 'warranty' ? 'Warranty' : 'Discount'}
+                                {item.product_price ? ` · $${parseFloat(item.product_price).toFixed(2)}` : ''}
+                                {item.show_timer ? ` · ⏱ ${item.timer_minutes}min` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Warning if no items */}
+                  {form.accept_path_items.length === 0 && form.decline_path_items.length === 0 && (
+                    <div className="review-warning">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                      </svg>
+                      This offer has no upsell or downsell items. Add at least one offer in the Accept or Decline path.
+                    </div>
+                  )}
+
+                  {editing && (
+                    <div className="form-group preview-link-group">
+                      <label className="form-label">Preview Link</label>
+                      <div className="preview-link-row">
+                        <input className="form-input preview-link-input" type="text" readOnly
+                          value={`${window.location.origin}${window.location.pathname}#/upsell-preview/${editing.id}`} />
+                        <button type="button" className="btn-copy" onClick={() => copyPreviewLink(editing.id)}>
+                          {copied ? '✓ Copied' : 'Copy Link'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Form Actions */}
               <div className="form-actions">
                 {step > 1 && (
                   <button type="button" className="btn-secondary" onClick={() => setStep(s => s - 1)}>Back</button>
                 )}
-                {step < 2 ? (
+                {step < 4 ? (
                   <button type="button" className="btn-primary" onClick={() => setStep(s => s + 1)}>Continue</button>
                 ) : (
                   <button type="submit" className="btn-primary">
@@ -796,6 +1094,16 @@ export default function OfferBuilder({ store, appConfig }) {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ── Offer Editor Slide-in Panel ── */}
+      {editingItem && (
+        <OfferEditor
+          item={editingItem.item}
+          pathType={editingItem.pathType}
+          onSave={handleEditorSave}
+          onClose={() => setEditingItem(null)}
+        />
       )}
 
       <style>{`
@@ -809,12 +1117,10 @@ export default function OfferBuilder({ store, appConfig }) {
         .btn-secondary:hover { background: #3f3f46; }
         .btn-publish { display: inline-flex; align-items: center; gap: 6px; background: #22c55e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
         .btn-unpublish { display: inline-flex; align-items: center; gap: 6px; background: #27272a; color: #e5e5e5; border: 1px solid #3f3f46; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
-
         .offers-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #27272a; padding-bottom: 0; }
         .tab-btn { background: none; border: none; color: #71717a; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
         .tab-btn:hover { color: #e5e5e5; }
         .tab-btn.active { color: #a78bfa; border-bottom-color: #8b5cf6; }
-
         .offers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
         .offer-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; transition: border-color 0.15s; }
         .offer-card:hover { border-color: #3f3f46; }
@@ -824,12 +1130,16 @@ export default function OfferBuilder({ store, appConfig }) {
         .status-badge.draft { background: rgba(107,114,128,0.2); color: #9ca3af; }
         .status-badge.published { background: rgba(34,197,94,0.15); color: #22c55e; }
         .status-badge.archived { background: rgba(239,68,68,0.15); color: #ef4444; }
-        .offer-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+        .offer-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
         .trigger-summary { font-size: 12px; color: #71717a; }
         .type-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
         .type-badge.add_product { background: rgba(139,92,246,0.15); color: #a78bfa; }
         .type-badge.warranty { background: rgba(34,197,94,0.15); color: #22c55e; }
-        .type-badge.discount_code { background: rgba(234,179,8,0.15); color: #eab308; }
+        .type-badge.discount, .type-badge.discount_code { background: rgba(234,179,8,0.15); color: #eab308; }
+        .offer-card-paths { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .path-count { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+        .path-count.upsell { background: rgba(34,197,94,0.1); color: #22c55e; }
+        .path-count.downsell { background: rgba(239,68,68,0.1); color: #ef4444; }
         .offer-card-stats { display: flex; gap: 20px; margin-bottom: 14px; }
         .offer-stat { flex: 1; }
         .offer-stat-label { font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
@@ -843,15 +1153,13 @@ export default function OfferBuilder({ store, appConfig }) {
         .btn-icon.danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; border-color: rgba(239,68,68,0.3); }
         .btn-icon.ab-btn { color: #a78bfa; border-color: rgba(139,92,246,0.3); }
         .btn-icon.ab-btn:hover { background: rgba(139,92,246,0.1); }
-
         .empty-offers { text-align: center; padding: 60px 40px; }
         .empty-icon { margin-bottom: 16px; color: #3f3f46; }
         .empty-offers h3 { font-size: 18px; font-weight: 600; color: #fafafa; margin-bottom: 8px; }
         .empty-offers p { color: #71717a; margin-bottom: 24px; font-size: 14px; }
-
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(4px); }
         .modal { background: #18181b; border: 1px solid #27272a; border-radius: 16px; max-height: 90vh; overflow-y: auto; }
-        .wide-modal { width: 900px; max-width: 95vw; }
+        .super-wide-modal { width: 980px; max-width: 95vw; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #27272a; }
         .modal-header h2 { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0; }
         .modal-header-actions { display: flex; align-items: center; gap: 10px; }
@@ -859,18 +1167,24 @@ export default function OfferBuilder({ store, appConfig }) {
         .modal-close:hover { background: #27272a; color: #fafafa; }
         .modal-body { padding: 24px; }
         .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 20px 24px; border-top: 1px solid #27272a; }
-
-        .steps-nav { display: flex; gap: 0; padding: 16px 24px; border-bottom: 1px solid #27272a; background: #1f1f28; }
-        .step-dot { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: #52525b; flex: 1; }
-        .step-dot span { width: 24px; height: 24px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+        .steps-nav { display: flex; gap: 0; padding: 14px 24px; border-bottom: 1px solid #27272a; background: #1f1f28; overflow-x: auto; }
+        .step-dot { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: #52525b; white-space: nowrap; padding-right: 24px; }
+        .step-dot span { width: 22px; height: 22px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
         .step-dot.active { color: #a78bfa; }
         .step-dot.active span { background: #8b5cf6; color: #fff; }
-
+        .flow-diagram { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: #0f0f14; border-bottom: 1px solid #27272a; flex-wrap: wrap; }
+        .flow-trigger { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #a1a1aa; background: #27272a; padding: 4px 10px; border-radius: 6px; }
+        .flow-branch-arrow { color: #52525b; }
+        .flow-branches { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .flow-branch { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .flow-branch.accept-branch { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
+        .flow-branch.decline-branch { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); }
+        .flow-branch-label { display: flex; align-items: center; gap: 6px; }
+        .flow-branch-or { font-size: 11px; color: #52525b; font-weight: 600; }
         .builder-form { padding: 24px; }
         .step-content { min-height: 400px; }
         .step-title { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0 0 4px; }
         .step-desc { color: #71717a; font-size: 14px; margin: 0 0 24px; }
-
         .form-group { margin-bottom: 20px; }
         .form-row { display: flex; gap: 16px; }
         .form-row .form-group { flex: 1; }
@@ -881,12 +1195,8 @@ export default function OfferBuilder({ store, appConfig }) {
         .form-input::placeholder { color: #3f3f46; }
         textarea.form-input { resize: vertical; min-height: 80px; }
         .form-hint { display: block; margin-top: 6px; font-size: 12px; color: #52525b; }
-
         .targeting-section { background: rgba(255,255,255,0.02); border: 1px solid #27272a; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
         .targeting-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-
-        .fallback-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; }
-
         .toggle-label { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 0; }
         .toggle-label span { font-size: 14px; color: #a1a1aa; }
         .toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
@@ -895,33 +1205,58 @@ export default function OfferBuilder({ store, appConfig }) {
         .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
         .toggle input:checked + .toggle-slider { background: #8b5cf6; }
         .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
+        .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #27272a; }
+        .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px; color: #71717a; }
+        .spinner { width: 20px; height: 20px; border: 2px solid #27272a; border-top-color: #8b5cf6; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Content editor layout */
-        .content-editor { display: flex; gap: 24px; }
-        .content-editor-left { flex: 1; min-width: 0; }
-        .content-editor-right { width: 300px; flex-shrink: 0; }
+        /* Flow builder styles */
+        .flow-path-section { }
+        .flow-path-header { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; }
+        .flow-path-header.accept-path { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: #22c55e; }
+        .flow-path-header.decline-path { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: #ef4444; }
+        .flow-path-count { margin-left: auto; font-size: 11px; opacity: 0.7; }
+        .flow-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .flow-item-card { border: 1px solid; border-radius: 10px; padding: 12px; transition: all 0.15s; cursor: pointer; }
+        .flow-item-card:hover { filter: brightness(1.1); }
+        .flow-item-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .flow-item-type { font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .flow-item-actions { display: flex; gap: 4px; }
+        .flow-item-card-body { display: flex; gap: 8px; align-items: flex-start; }
+        .flow-item-img { width: 36px; height: 36px; border-radius: 5px; object-fit: cover; flex-shrink: 0; }
+        .flow-item-info { flex: 1; min-width: 0; }
+        .flow-item-headline { font-size: 12px; font-weight: 600; color: #e5e5e5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .flow-item-message { font-size: 11px; color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .flow-item-price { font-size: 13px; font-weight: 700; margin-top: 4px; }
+        .flow-item-timer { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #ef4444; font-weight: 600; margin-top: 6px; }
+        .flow-add-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 2px dashed; border-radius: 10px; padding: 24px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; min-height: 100px; }
+        .flow-add-card:hover { filter: brightness(1.15); }
+        .flow-empty-hint { text-align: center; padding: 32px; color: #52525b; }
+        .flow-empty-hint svg { margin-bottom: 8px; }
+        .flow-empty-hint p { font-size: 13px; margin: 4px 0; }
+        .flow-empty-sub { font-size: 12px; color: #3f3f46; }
 
-        .upsell-type-selector { display: flex; gap: 8px; margin-bottom: 24px; }
-        .upsell-type-btn { display: flex; align-items: center; gap: 6px; background: #0f0f14; border: 2px solid #27272a; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #71717a; cursor: pointer; transition: all 0.15s; }
-        .upsell-type-btn:hover { border-color: #3f3f46; color: #e5e5e5; }
-        .upsell-type-btn.active { border-color: #8b5cf6; background: rgba(139,92,246,0.1); color: #a78bfa; }
-
-        .type-fields { background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-        .warranty-fields { border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.03); }
-
-        .urgency-options { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-        .urgency-title { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-
+        /* Review step */
+        .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .review-card { background: #0f0f14; border: 1px solid #27272a; border-radius: 10px; padding: 16px; }
+        .review-card-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #a78bfa; margin-bottom: 12px; }
+        .review-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #1f1f28; font-size: 12px; }
+        .review-row:last-child { border-bottom: none; }
+        .review-label { color: #71717a; }
+        .review-value { color: #e5e5e5; font-weight: 500; }
+        .review-empty { font-size: 12px; color: #52525b; text-align: center; padding: 12px; }
+        .review-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1f1f28; }
+        .review-item:last-child { border-bottom: none; }
+        .review-item-num { width: 18px; height: 18px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #71717a; flex-shrink: 0; margin-top: 1px; }
+        .review-item-info { flex: 1; min-width: 0; }
+        .review-item-headline { font-size: 12px; font-weight: 600; color: #e5e5e5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .review-item-meta { font-size: 11px; color: #71717a; margin-top: 2px; }
+        .review-warning { display: flex; align-items: center; gap: 8px; background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #eab308; margin-bottom: 20px; }
         .preview-link-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; }
         .preview-link-row { display: flex; gap: 8px; }
         .preview-link-input { flex: 1; font-size: 12px; color: #71717a; }
         .btn-copy { background: #27272a; border: 1px solid #3f3f46; color: #e5e5e5; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
         .btn-copy:hover { background: #3f3f46; }
-
-        .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #27272a; }
-        .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px; color: #71717a; }
-        .spinner { width: 20px; height: 20px; border: 2px solid #27272a; border-top-color: #8b5cf6; border-radius: 50%; animation: spin 0.7s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
 
         /* A/B Test Modal */
         .ab-modal { width: 560px; }
@@ -949,6 +1284,16 @@ export default function OfferBuilder({ store, appConfig }) {
         .preset-btn.active { background: rgba(139,92,246,0.2); border-color: #8b5cf6; color: #a78bfa; }
         .ab-info { display: flex; gap: 8px; align-items: flex-start; background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); border-radius: 8px; padding: 12px; font-size: 13px; color: #71717a; }
         .ab-info svg { flex-shrink: 0; margin-top: 2px; color: #a78bfa; }
+
+        /* Shared form elements */
+        .upsell-type-selector { display: flex; gap: 8px; margin-bottom: 24px; }
+        .upsell-type-btn { display: flex; align-items: center; gap: 6px; background: #0f0f14; border: 2px solid #27272a; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #71717a; cursor: pointer; transition: all 0.15s; }
+        .upsell-type-btn:hover { border-color: #3f3f46; color: #e5e5e5; }
+        .upsell-type-btn.active { border-color: #8b5cf6; background: rgba(139,92,246,0.1); color: #a78bfa; }
+        .type-fields { background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .warranty-fields { border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.03); }
+        .urgency-options { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .urgency-title { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
       `}</style>
     </div>
   );
