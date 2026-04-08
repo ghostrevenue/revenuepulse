@@ -24,24 +24,29 @@ export default function Dashboard({ store, appConfig }) {
         api.getDashboardRecent(),
         api.getABTests().catch(() => ({ tests: [] })),
       ]);
-      setStats(statsRes.stats || {
-        total_accepts: 0,
-        total_declines: 0,
-        acceptance_rate: 0,
-        revenue_lifted: 0,
-        total_triggered: 0,
-        // Mock trend data for demo
-        revenue_lifted_trend: 12.4,
-        accepts_trend: -3.2,
-        rate_trend: 5.1,
-        triggered_trend: 8.7,
+      const statsData = statsRes || {};
+      // Only fall back to demo indicators if explicitly requested or API returned no data at all
+      const hasRealData = statsData.accepts > 0 || statsData.declines > 0 || statsData.total_revenue_lifted > 0 || statsData.requests > 0;
+      setStats({
+        total_accepts: statsData.accepts || 0,
+        total_declines: statsData.declines || 0,
+        acceptance_rate: statsData.acceptance_rate || 0,
+        revenue_lifted: statsData.total_revenue_lifted || 0,
+        total_triggered: statsData.accepts_this_week || 0,
+        // Only show trends if we have real data to back them
+        revenue_lifted_trend: hasRealData ? (statsData.revenue_lifted_trend || 0) : 0,
+        accepts_trend: hasRealData ? (statsData.accepts_trend || 0) : 0,
+        rate_trend: hasRealData ? (statsData.rate_trend || 0) : 0,
+        triggered_trend: hasRealData ? (statsData.triggered_trend || 0) : 0,
+        // Demo data indicator
+        is_demo_data: !hasRealData,
       });
       setOffers(offersRes.offers || []);
       setRecent(recentRes.responses || []);
       setAbTests(abTestsRes.tests || []);
     } catch (e) {
       console.error('Dashboard load error:', e.message);
-      // Fallback with mock trends
+      // Fallback with demo indicator
       setStats({
         total_accepts: 0,
         total_declines: 0,
@@ -52,6 +57,7 @@ export default function Dashboard({ store, appConfig }) {
         accepts_trend: 0,
         rate_trend: 0,
         triggered_trend: 0,
+        is_demo_data: true,
       });
     } finally {
       setLoading(false);
@@ -122,6 +128,16 @@ export default function Dashboard({ store, appConfig }) {
           Create New Offer
         </button>
       </div>
+
+      {/* Demo Data Indicator Banner */}
+      {stats?.is_demo_data && (
+        <div className="demo-data-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          <span><strong>Demo data shown</strong> — No real offer responses yet. Create and publish offers to see real metrics.</span>
+        </div>
+      )}
 
       {/* A/B Test Active Banner */}
       {hasActiveABTests && (
@@ -335,6 +351,11 @@ export default function Dashboard({ store, appConfig }) {
         .btn-ghost-sm { background: none; border: none; color: #a78bfa; font-size: 13px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
         .btn-ghost-sm:hover { background: #1f1f2e; }
         .link-btn { background: none; border: none; color: #a78bfa; cursor: pointer; font-size: 14px; text-decoration: underline; }
+
+        /* Demo Data Banner */
+        .demo-data-banner { display: flex; align-items: center; gap: 10px; background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; color: #eab308; font-size: 14px; }
+        .demo-data-banner svg { flex-shrink: 0; }
+        .demo-data-banner span strong { font-weight: 600; }
 
         /* A/B Banner */
         .ab-banner { display: flex; align-items: center; gap: 12px; background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(167,139,250,0.1)); border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; }

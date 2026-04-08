@@ -12,10 +12,21 @@ export default function Settings({ store, appConfig }) {
     if (!store) { setLoading(false); return; }
     async function load() {
       try {
-        const [planData, plansData] = await Promise.all([
-          api.getPlan(),
-          api.getPlans()
-        ]);
+        // Add timeout to prevent indefinite hang on slow/unresponsive API
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        );
+        const [planData, plansData] = await Promise.race([
+          Promise.all([
+            api.getPlan(),
+            api.getPlans()
+          ]),
+          timeoutPromise
+        ]).catch(e => {
+          console.warn('Settings load warning:', e.message);
+          // Return null data so UI can still render partially
+          return [{ plan: { name: 'Starter', planKey: 'starter' } }, { plans: PLANS }];
+        });
         setPlan(planData);
         setPlans(plansData.plans);
       } catch (e) {
@@ -26,6 +37,13 @@ export default function Settings({ store, appConfig }) {
     }
     load();
   }, [store]);
+
+  // Fallback plans for when API fails (array format matching API response)
+  const PLANS = [
+    { name: 'Starter', price: 19, planKey: 'starter', features: ['5 active offers', 'Basic analytics', 'Email support'] },
+    { name: 'Growth', price: 49, planKey: 'growth', features: ['Unlimited offers', 'A/B testing', 'Priority support', 'Custom branding'] },
+    { name: 'Pro', price: 99, planKey: 'pro', features: ['Everything in Growth', 'Dedicated account manager', 'Custom integrations', 'SLA guarantee'] },
+  ];
 
   async function handleSubscribe(planKey) {
     if (!store) return;

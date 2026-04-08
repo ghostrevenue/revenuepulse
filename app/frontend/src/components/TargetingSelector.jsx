@@ -32,6 +32,14 @@ export default function TargetingSelector({ mode = 'include', field, values = []
   const modeBg = mode === 'include' ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
   const modeBorder = mode === 'include' ? 'rgba(139,92,246,0.2)' : 'rgba(239,68,68,0.2)';
 
+  // Field label map — fix ReferenceError: fieldLabelMap was referenced before being defined
+  const fieldLabelMap = {
+    products: { include: 'Include Products', exclude: 'Exclude Products' },
+    collections: { include: 'Include Collections', exclude: 'Exclude Collections' },
+    tags: { include: 'Include Tags', exclude: 'Exclude Tags' },
+  };
+  const fieldLabel = label || (fieldLabelMap[field]?.[mode] || field);
+
   // Debounced search for products
   useEffect(() => {
     if (field !== 'products' || !modalOpen) return;
