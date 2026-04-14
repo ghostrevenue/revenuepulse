@@ -13,7 +13,7 @@ import React, { useState, useEffect } from 'react';
  * - Live countdown timer
  * - "No thanks, maybe later" skip link
  */
-export default function VisualPreview({ form, itemData, fullSize }) {
+export default function VisualPreview({ form, itemData, fullSize, shop }) {
   const {
     offer_type: offerType = 'add_product',
     headline,
@@ -248,7 +248,7 @@ export default function VisualPreview({ form, itemData, fullSize }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
             </svg>
-            checkout.yourstore.com
+            {shop ? `checkout.${shop}` : 'checkout.yourstore.com'}
           </div>
           <div style={{ width: 52 }} />
         </div>

@@ -162,18 +162,10 @@ export default function Upsells({ store, appConfig }) {
                 <small>Offer triggers for orders at or above this value</small>
               </div>
 
-              {form.offer_type === 'add_to_order' && (
-                <div className="form-group">
-                  <label>Target Product ID</label>
-                  <input type="text" value={form.target_product_id} onChange={e => setForm({ ...form, target_product_id: e.target.value })} placeholder="1234567890" />
-                  <small>The product to offer as an upsell</small>
-                </div>
-              )}
-
               <div className="form-group">
                 <label>Target Product IDs (comma-separated)</label>
-                <input type="text" value={form.target_product_id} onChange={e => setForm({ ...form, target_product_id: e.target.value })} placeholder="123,456,789" />
-                <small>Trigger only for orders containing these products</small>
+                <input type="text" value={form.target_product_id} onChange={e => setForm({ ...form, target_product_id: e.target.value })} placeholder="1234567890, 9876543210" />
+                <small>Trigger only for orders containing these product IDs</small>
               </div>
 
               <div className="form-group">

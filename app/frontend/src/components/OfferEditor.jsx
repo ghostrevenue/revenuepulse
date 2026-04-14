@@ -11,7 +11,7 @@ import VisualPreview from './VisualPreview.jsx';
  *   onSave     — (updatedItem) => void
  *   onClose    — () => void
  */
-export default function OfferEditor({ item, pathType, onSave, onClose }) {
+export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
   const isUpsell = pathType === 'upsell';
   const pathColor = isUpsell ? '#8b5cf6' : '#ef4444';
   const pathBg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
@@ -251,7 +251,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
         {previewOnly ? (
           /* Preview Only Mode — full size */
           <div className="offer-editor-preview-only">
-            <VisualPreview form={previewForm} fullSize />
+            <VisualPreview form={previewForm} fullSize shop={shop} />
           </div>
         ) : (
           /* Edit Mode — two-column: form + preview */
@@ -564,7 +564,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
             {/* Right: Live Visual Preview */}
             <div className="offer-editor-preview-col">
               <div className="preview-label">Live Preview</div>
-              <VisualPreview form={previewForm} />
+              <VisualPreview form={previewForm} shop={shop} />
             </div>
           </div>
         )}
@@ -604,7 +604,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose }) {
                 </button>
               </div>
               <div className="fullscreen-preview-content">
-                <VisualPreview form={previewForm} fullSize />
+                <VisualPreview form={previewForm} fullSize shop={shop} />
               </div>
             </div>
           </div>

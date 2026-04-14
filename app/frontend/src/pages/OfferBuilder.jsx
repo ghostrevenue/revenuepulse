@@ -1234,6 +1234,7 @@ export default function OfferBuilder({ store, appConfig }) {
           pathType={editingItem.pathType}
           onSave={handleEditorSave}
           onClose={() => setEditingItem(null)}
+          shop={store?.shop}
         />
       )}
 

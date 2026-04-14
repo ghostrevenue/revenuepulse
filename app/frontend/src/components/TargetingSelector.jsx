@@ -71,9 +71,11 @@ export default function TargetingSelector({ mode = 'include', field, values = []
     if (!modalOpen) return;
     setApiError(null);
     setNotConnected(false);
-    setSelectedCollections({});
-    setSelectedTags({});
     if (field === 'collections') {
+      // Restore already-selected items as pre-checked so user can uncheck to remove them
+      const preSelected = values.reduce((acc, v) => { if (v.id) acc[v.id] = v; return acc; }, {});
+      setSelectedCollections(preSelected);
+      setSelectedTags({});
       api.getShopifyCollections()
         .then(res => setAllItems(res.collections || res || []))
         .catch(e => {
@@ -86,6 +88,10 @@ export default function TargetingSelector({ mode = 'include', field, values = []
           }
         });
     } else if (field === 'tags') {
+      // Restore already-selected tags as pre-checked
+      const preSelected = values.reduce((acc, tag) => { acc[tag] = tag; return acc; }, {});
+      setSelectedTags(preSelected);
+      setSelectedCollections({});
       api.getShopifyProductTags()
         .then(res => setAllItems(res.tags || res || []))
         .catch(e => {

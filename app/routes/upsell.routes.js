@@ -151,6 +151,68 @@ router.get('/offers', verifyShop, async (req, res) => {
   }
 });
 
+// GET /api/upsell/responses — recent responses and totals for Upsells page
+router.get('/responses', verifyShop, async (req, res) => {
+  try {
+    const limit = 50;
+    const responses = db.usePostgres
+      ? await db.prepare(`
+          SELECT r.*, o.name as offer_name
+          FROM upsell_responses r
+          LEFT JOIN upsell_offers o ON r.offer_id = o.id
+          WHERE r.store_id = $1
+          ORDER BY r.created_at DESC
+          LIMIT ${limit}
+        `).all(req.store.id)
+      : db.prepare(`
+          SELECT r.*, o.name as offer_name
+          FROM upsell_responses r
+          LEFT JOIN upsell_offers o ON r.offer_id = o.id
+          WHERE r.store_id = ?
+          ORDER BY r.created_at DESC
+          LIMIT ?
+        `).all(req.store.id, limit);
+
+    const totals = db.usePostgres
+      ? await db.prepare(`
+          SELECT response, COUNT(*) as count
+          FROM upsell_responses
+          WHERE store_id = $1 AND response IN ('accepted', 'declined')
+          GROUP BY response
+        `).all(req.store.id)
+      : db.prepare(`
+          SELECT response, COUNT(*) as count
+          FROM upsell_responses
+          WHERE store_id = ? AND response IN ('accepted', 'declined')
+          GROUP BY response
+        `).all(req.store.id);
+
+    const totalMap = {};
+    for (const t of (totals || [])) totalMap[t.response] = parseInt(t.count);
+
+    const accepted = totalMap['accepted'] || 0;
+    const declined = totalMap['declined'] || 0;
+    const triggered = accepted + declined;
+
+    // Format dates as ISO strings for the frontend table
+    const formattedResponses = (responses || []).map(r => ({
+      id: r.id,
+      order_id: r.order_id,
+      offer_id: r.offer_id,
+      offer_name: r.offer_name || `Offer #${r.offer_id}`,
+      response: r.response,
+      count: 1,
+      date: r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A',
+      created_at: r.created_at,
+      revenue_added: r.added_revenue || 0,
+    }));
+
+    res.json({ responses: formattedResponses, totals: { accepted, declined, triggered } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── POST /api/upsell/offers ────────────────────────────────────────────────────
 // Create a new upsell offer (status defaults to 'draft')
 router.post('/offers', verifyShop, async (req, res) => {
@@ -699,7 +761,40 @@ router.get('/check/:order_id', async (req, res) => {
 
   const totalPrice = parseFloat(order.total_price || 0);
   const lineItemIds = (order.line_items || []).map(li => String(li.product_id));
-  const lineItemCollectionIds = []; // We'll resolve collections if needed
+
+  // Build product data map (collection IDs + tags) for all line items — done once, reused for all targeting checks
+  const productDataMap = {};
+  if (lineItemIds.length > 0) {
+    try {
+      const productIdsParam = lineItemIds.join(',');
+      const prodRes = await fetch(
+        `https://${shop}/admin/api/2024-01/products.json?ids=${productIdsParam}&fields=id,collections,tags`,
+        { headers: { 'X-Shopify-Access-Token': store.access_token } }
+      );
+      if (prodRes.ok) {
+        const { products = [] } = await prodRes.json();
+        for (const p of products) {
+          productDataMap[String(p.id)] = {
+            collectionIds: new Set((p.collections || []).map(c => String(c.id))),
+            tags: new Set((p.tags || '').split(',').map(t => t.trim()).filter(Boolean)),
+          };
+        }
+      }
+    } catch (e) {
+      console.error('[check] Product batch fetch error:', e.message);
+    }
+  }
+
+  // Collect all collection IDs and tags from line items for targeting checks
+  const lineItemCollectionIds = [];
+  const lineItemTags = new Set();
+  for (const productId of lineItemIds) {
+    const data = productDataMap[productId];
+    if (data) {
+      data.collectionIds.forEach(cid => lineItemCollectionIds.push(cid));
+      data.tags.forEach(tag => lineItemTags.add(tag));
+    }
+  }
 
   // Fetch customer for first-time customer check
   let customer = null;
@@ -776,11 +871,14 @@ router.get('/check/:order_id', async (req, res) => {
     // Check EXCLUDE rules first — if ANY exclude matches, skip this offer
     if (excludeProductIds.length > 0 && orderContainsAny(excludeProductIds)) return false;
     if (excludeCollectionIds.length > 0) {
-      // Would need product→collection lookup; skip for now unless products have collection data
-      // For now, skip if we can't resolve
+      // Skip if any line item is in an excluded collection
+      const hasExcludedCollection = excludeCollectionIds.some(cid => lineItemCollectionIds.includes(String(cid)));
+      if (hasExcludedCollection) return false;
     }
     if (excludeTags.length > 0) {
-      // Would need product tags; skip for now
+      // Skip if any line item has an excluded tag
+      const hasExcludedTag = excludeTags.some(tag => lineItemTags.has(tag));
+      if (hasExcludedTag) return false;
     }
 
     // Check INCLUDE rules
@@ -789,10 +887,14 @@ router.get('/check/:order_id', async (req, res) => {
       if (!orderContainsAny(includeProductIds)) return false;
     }
     if (includeCollectionIds.length > 0) {
-      // Would need product→collection lookup
+      // Order must contain at least one product from an included collection
+      const hasIncludedCollection = includeCollectionIds.some(cid => lineItemCollectionIds.includes(String(cid)));
+      if (!hasIncludedCollection) return false;
     }
     if (includeTags.length > 0) {
-      // Would need product tags
+      // Order must contain at least one product with an included tag
+      const hasIncludedTag = includeTags.some(tag => lineItemTags.has(tag));
+      if (!hasIncludedTag) return false;
     }
 
     // Legacy trigger_product_ids check

@@ -55,14 +55,13 @@ router.post('/session/verify', async (req, res) => {
         // so pass the full body with hmac still present
         const verified = verifyShopifyHmac(req.body, apiSecret);
         if (!verified) {
-          console.warn('[verifySession] HMAC mismatch — proceeding anyway since Shopify will reject tampered requests');
+          console.error('[verifySession] HMAC verification FAILED — rejecting request');
+          return res.status(401).json({ error: 'HMAC verification failed' });
         }
       } catch (e) {
-        console.warn('[verifySession] HMAC check skipped due to error:', e.message);
+        console.error('[verifySession] HMAC check error — rejecting request:', e.message);
+        return res.status(401).json({ error: 'HMAC verification error: ' + e.message });
       }
-      // Proceed even if HMAC doesn't verify — Shopify will reject tampered requests.
-      // We allow this for the POST /api/auth/verify-session flow too, matching the
-      // fix already applied to GET /api/auth/partners-start.
     }
     await db.ensureReady();
     let store = await StoreModel.findByShop(shopFromOAuth);
@@ -76,10 +75,10 @@ router.post('/session/verify', async (req, res) => {
   // ── End Partners Dashboard flow ─────────────────────────────────────────────
 
   if (!sessionToken && !shopDomain) {
-    // Also accept shop from URL query params
+    // Also accept shop from URL query params or body
     const shopFromQuery = req.query.shop;
     const storeIdFromQuery = req.query.store_id;
-    console.log('[DEBUG verifySession] shopFromQuery:', shopFromQuery, 'storeIdFromQuery:', storeIdFromQuery);
+    console.log('[DEBUG verifySession] shopFromQuery:', shopFromQuery, 'storeIdFromQuery:', storeIdFromQuery, 'storeIdFromBody:', storeIdFromBody);
     if (!shopFromQuery && !storeIdFromQuery && !storeIdFromBody) {
       return res.status(401).json({ error: 'No session token or shop domain provided' });
     }
@@ -188,7 +187,11 @@ router.get('/partners-start', async (req, res) => {
   const redirectUri = `${appUrl}/api/auth/callback`;
   const state = uuidv4(); // CSRF token
 
-  const authUrl = `https://${shopFromOAuth}/admin/oauth/authorize?client_id=${apiKey}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&hmac=${hmac}&timestamp=${timestamp || ''}&host=${encodeURIComponent(host || '')}`;
+  // The `host` param must be the raw base64-encoded shop origin — NOT double-encoded.
+  // Shopify encodes it before sending via Partners Dashboard; we must preserve it as-is
+  // so it survives the URL round-trip to Shopify's authorize endpoint.
+  const encodedHost = Buffer.from(shopFromOAuth || '', 'utf8').toString('base64');
+  const authUrl = `https://${shopFromOAuth}/admin/oauth/authorize?client_id=${apiKey}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&hmac=${hmac}&timestamp=${timestamp || ''}&host=${encodeURIComponent(encodedHost)}`;
 
   console.log('[/api/auth/partners-start] redirecting to:', authUrl);
   res.redirect(authUrl);

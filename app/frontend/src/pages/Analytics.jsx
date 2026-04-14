@@ -252,7 +252,9 @@ export default function Analytics({ store, appConfig }) {
 
       const hasRealStats = statsRes && (statsRes.accepts > 0 || statsRes.declines > 0 || statsRes.total_responses > 0);
       const hasRealChart = chartRes?.chart?.length > 0;
-      if (!hasRealStats || !hasRealChart) {
+      // Only show demo banner when BOTH stats and chart are empty — a store with
+      // real stats but no chart data yet is still a real store, not a demo.
+      if (!hasRealStats && !hasRealChart) {
         setIsDemoData(true);
       }
 

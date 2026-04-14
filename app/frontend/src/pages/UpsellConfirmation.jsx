@@ -8,8 +8,19 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
   const [status, setStatus] = useState('idle'); // idle | accepting | accepted | declining | declined
   const [loading, setLoading] = useState(true);
   const [orderId] = useState('PREVIEW-ORDER');
-  // Mock social proof number (in production this would come from API)
-  const [socialProofCount] = useState(Math.floor(Math.random() * 150) + 89);
+
+  // Deterministic social-proof count — derived from order ID so it never changes
+  // on re-renders. In production this comes from the API; for preview, use a
+  // plausible range seeded by the order string.
+  function hashOrderToCount(order) {
+    let hash = 0;
+    for (let i = 0; i < order.length; i++) {
+      hash = ((hash << 5) - hash) + order.charCodeAt(i);
+      hash |= 0;
+    }
+    return (Math.abs(hash) % 150) + 89; // 89–238 range
+  }
+  const socialProofCount = hashOrderToCount(orderId);
 
   useEffect(() => {
     loadPreviewOffer();

@@ -29,8 +29,8 @@ async function apiFetch(path, options = {}) {
     ...options
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `Request failed with status ${res.status}`);
   }
   return res.json();
 }
@@ -51,10 +51,10 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body
-      }).then(res => {
+      }).then(async res => {
         if (!res.ok) {
-          const err = res.json().catch(() => ({ error: 'Request failed' }));
-          throw new Error(err.error || `HTTP ${res.status}`);
+          const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+          throw new Error(err.error || `Request failed with status ${res.status}`);
         }
         return res.json();
       });
@@ -74,6 +74,9 @@ export const api = {
   // --- UPSELL OFFERS ---
   // GET /api/upsell/offers — list all offers
   getUpsellOffers: () => apiFetch('/api/upsell/offers'),
+
+  // GET /api/upsell/responses — recent offer responses
+  getUpsellResponses: () => apiFetch('/api/upsell/responses'),
 
   // POST /api/upsell/offers — create offer
   createUpsellOffer: (data) => apiFetch('/api/upsell/offers', {
