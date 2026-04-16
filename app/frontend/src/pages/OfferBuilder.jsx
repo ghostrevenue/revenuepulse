@@ -53,6 +53,11 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
   const [device, setDevice] = useState('desktop');
   const [nodeStyle, setNodeStyle] = useState({});
 
+  // Save status tracking
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  const [saveError, setSaveError] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+
   // Trigger state (derived from funnel trigger + node conditions)
   const [triggerType, setTriggerType] = useState('any');
   const [selectedTriggerProducts, setSelectedTriggerProducts] = useState([]);
@@ -77,8 +82,14 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
 
   // Persist funnel to backend and update local state
   async function handleSave(data) {
+    // Prevent duplicate saves
+    if (saveStatus === 'saving' || isCreating) return;
+
     // Always update local state first so UI stays responsive
     onSave(data);
+
+    setSaveStatus('saving');
+    setSaveError(null);
 
     // Persist to backend
     try {
@@ -89,10 +100,18 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
         // If the result has an ID, update the funnel with the new ID
         if (result && result.id) {
           onSave({ ...data, id: result.id });
+        } else {
+          // API didn't return an ID — log warning but don't crash
+          console.warn('createUpsellOffer did not return an ID:', result);
         }
       }
+      setSaveStatus('saved');
+      // Reset to idle after 3 seconds so subsequent saves still work
+      setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (e) {
       console.error('Failed to save offer:', e);
+      setSaveError(e.message || 'Failed to save');
+      setSaveStatus('error');
       // Local state was already updated above, so UI is still usable
     }
   }
@@ -124,10 +143,13 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
       on_decline_node_id: null,
       position: { x: 0, y: 0 },
     };
-    handleSave({ ...funnel, nodes: [...funnel.nodes, newNode] });
+    const updatedFunnel = { ...funnel, nodes: [...funnel.nodes, newNode] };
+    handleSave(updatedFunnel);
     setSelectedNodeId(newNode.id);
     setActiveStep(1);
     setNodeStyle({});
+    // Auto-open product picker for the new node (Bug 2 fix)
+    setTimeout(() => setShowProductPicker('offer'), 150);
   }
 
   function removeNode(nodeId) {
@@ -168,6 +190,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
           title: product.title,
           variant_title: variant.title,
           original_price: variant.price,
+          compare_at_price: variant.compare_at_price || null,
           image_url: variant.image || product.image,
           images: product.images,
           description: product.description || '',
@@ -473,7 +496,10 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
           {node.discount?.value > 0 && node.product?.original_price && (
             <div className="discount-preview">
               {(() => {
-                const orig = parseFloat(node.product.original_price);
+                // Use compare_at_price as original if checkbox is checked (Bug 4 fix)
+                const compareAtPrice = node.product.compare_at_price;
+                const useCompareAt = node.discount?.use_compare_at_price && compareAtPrice;
+                const orig = parseFloat(useCompareAt ? compareAtPrice : node.product.original_price);
                 const disc = node.discount.type === 'percentage'
                   ? orig * (1 - node.discount.value / 100)
                   : node.discount.type === 'fixed_amount'
@@ -482,6 +508,19 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
                 return <>Customer pays <strong>${disc.toFixed(2)}</strong> (was ${orig.toFixed(2)})</>;
               })()}
             </div>
+          )}
+          {/* Compare-at price checkbox (Bug 4 fix) */}
+          {node.product?.compare_at_price && (
+            <label className="toggle-label" style={{ marginTop: '8px', fontSize: '13px', color: '#a1a1aa' }}>
+              <input
+                type="checkbox"
+                checked={node.discount?.use_compare_at_price || false}
+                onChange={e => updateNode(node.id, {
+                  discount: { ...node.discount, use_compare_at_price: e.target.checked }
+                })}
+              />
+              Use compare-at price as original ({node.product.compare_at_price})
+            </label>
           )}
         </div>
 
@@ -682,8 +721,15 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
                 </React.Fragment>
               );
             })}
+            {/* Save button in step nav area (Bug 3 fix) */}
+            <button
+              className="ob-save-sm"
+              onClick={() => handleSave(funnel)}
+              disabled={saveStatus === 'saving'}
+            >
+              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '⚠ Error' : 'Save'}
+            </button>
           </div>
-
           {/* Step content */}
           <div className="ob-scroll-area">
             {activeStep === 1 && renderStep1()}
@@ -693,19 +739,15 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
 
           {/* Navigation */}
           <div className="ob-nav">
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {activeStep > 1 && (
-                <button className="ob-back" onClick={() => setActiveStep(s => s - 1)}>← Back</button>
-              )}
-              <button className="ob-save" onClick={() => handleSave(funnel)}>Save Offer</button>
-            </div>
-            <div>
-              {activeStep < 3 ? (
-                <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
-              ) : (
-                <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
-              )}
-            </div>
+            {activeStep > 1 && (
+              <button className="ob-back" onClick={() => setActiveStep(s => s - 1)}>← Back</button>
+            )}
+            <div style={{ flex: 1 }} />
+            {activeStep < 3 ? (
+              <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
+            ) : (
+              <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
+            )}
           </div>
         </div>
 
@@ -801,7 +843,7 @@ const OB_CSS = `
 .ob-scroll-area { flex: 1; overflow-y: auto; }
 
 /* Step nav */
-.ob-step-nav { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid #27272a; gap: 0; flex-shrink: 0; }
+.ob-step-nav { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid #27272a; gap: 0; flex-shrink: 0; justify-content: space-between; }
 .ob-step { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52525b; cursor: pointer; transition: color 0.15s; }
 .ob-step.active { color: #8b5cf6; font-weight: 700; }
 .ob-step.done { color: #22c55e; }
@@ -810,6 +852,9 @@ const OB_CSS = `
 .ob-step.active .ob-step-num { background: #8b5cf6; border-color: #8b5cf6; color: white; }
 .ob-step-line { flex: 1; height: 2px; background: #27272a; margin: 0 8px; align-self: center; }
 .ob-step.done .ob-step-line { background: #22c55e; }
+.ob-save-sm { background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; margin-left: 12px; }
+.ob-save-sm:hover { background: #3f3f46; color: #fafafa; border-color: #52525b; }
+.ob-save-sm:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Step content */
 .wizard-step-content { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -833,6 +878,10 @@ const OB_CSS = `
 .radio-option input { accent-color: #8b5cf6; width: 16px; height: 16px; }
 .radio-option.disabled { opacity: 0.5; cursor: not-allowed; }
 .coming-soon { font-size: 10px; background: #f59e0b; color: #000; padding: 1px 6px; border-radius: 4px; font-weight: 700; margin-left: auto; }
+
+/* Toggle/checkbox labels */
+.toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.toggle-label input[type=checkbox] { accent-color: #8b5cf6; width: 16px; height: 16px; }
 
 /* Inline picker */
 .inline-picker { margin-top: 8px; }

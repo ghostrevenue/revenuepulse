@@ -56,7 +56,9 @@ export default function OfferPageRenderer({ node, style, fullWidth = false }) {
   const hasProduct = !!(node?.product?.product_id);
 
   // Compute pricing
-  const originalPrice = node?.product?.original_price || '0';
+  // Use compare_at_price as original if the use_compare_at_price checkbox is checked (Bug 4 fix)
+  const useCompareAt = node?.discount?.use_compare_at_price && node?.product?.compare_at_price;
+  const originalPrice = useCompareAt ? node.product.compare_at_price : (node?.product?.original_price || '0');
   const discountedPrice = computeDiscountedPrice(originalPrice, node?.discount);
   const savings = computeSavings(parseFloat(originalPrice), discountedPrice);
   const savingsPct = originalPrice > 0 ? Math.round((savings / parseFloat(originalPrice)) * 100) : 0;
