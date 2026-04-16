@@ -1185,4 +1185,5 @@ router.get('/stats', verifyShop, async (req, res) => {
   }
 });
 
+export { verifyShop };
 export default router;
