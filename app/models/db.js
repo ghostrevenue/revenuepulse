@@ -39,8 +39,10 @@ async function initSqlite() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  // Add refresh_token column if it doesn't exist (for existing installs)
-  db.run('ALTER TABLE stores ADD COLUMN refresh_token TEXT');
+  // Add refresh_token column if it doesn't exist (idempotent for SQLite)
+  const existingCols = db.exec("PRAGMA table_info(stores)");
+  const hasRefreshToken = existingCols.some(row => row.values.some(v => v[1] === 'refresh_token'));
+  if (!hasRefreshToken) db.run(`ALTER TABLE stores ADD COLUMN refresh_token TEXT`);
   db.run(`
     CREATE TABLE IF NOT EXISTS revenue_data (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,8 +238,14 @@ async function initPostgres() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  // Add refresh_token column if it doesn't exist (for existing installs)
-  await pgPool.query(`ALTER TABLE stores ADD COLUMN refresh_token TEXT`);
+  // Add refresh_token column if it doesn't exist (idempotent for PostgreSQL)
+  const pgCheck = await pgPool.query(`
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'stores' AND column_name = 'refresh_token'
+  `);
+  if (pgCheck.rows.length === 0) {
+    await pgPool.query(`ALTER TABLE stores ADD COLUMN refresh_token TEXT`);
+  }
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS revenue_data (
       id SERIAL PRIMARY KEY,
