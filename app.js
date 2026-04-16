@@ -30,6 +30,7 @@ import webhooksRoutes from './app/routes/webhooks.routes.js';
 import upsellRoutes from './app/routes/upsell.routes.js';
 import dashboardRoutes from './app/routes/dashboard.routes.js';
 import shopifyRoutes from './app/routes/shopify.routes.js';
+import funnelRoutes from './app/routes/funnel.routes.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/revenue', revenueRoutes);
@@ -37,6 +38,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/upsell', upsellRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/shopify', shopifyRoutes);
+app.use('/api/funnels', funnelRoutes);
 app.use('/webhooks', webhooksRoutes);
 
 // ─── Shopify OAuth: Entry point when merchant clicks "Install" ────────────────

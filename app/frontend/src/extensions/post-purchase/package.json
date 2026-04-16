@@ -1,0 +1,15 @@
+{
+  "name": "revenuepulse-post-purchase",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "shopify extension build",
+    "dev": "shopify extension dev"
+  },
+  "dependencies": {
+    "@shopify/checkout-ui-extensions": "^0.10.0"
+  },
+  "devDependencies": {
+    "shopify-cli": "^3.0.0"
+  }
+}

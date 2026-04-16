@@ -1,2137 +1,1554 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/index.js';
-import TargetingSelector from '../components/TargetingSelector.jsx';
-import OfferEditor from '../components/OfferEditor.jsx';
 
-const MAX_ITEMS = 6;
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateId() {
-  return 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-function makeItem(overrides = {}) {
+function makeNode(overrides = {}) {
   return {
     id: generateId(),
-    offer_type: 'add_product',
+    type: 'single_product',
+    product: null,
+    discount: { type: 'percentage', value: 0 },
+    quantity: 1,
     headline: 'Wait! Add this to your order',
     message: 'Get it delivered with your current order — just one click away.',
-    // Single product (backwards compat)
-    product_id: '',
-    product_title: '',
-    product_price: '',
-    product_image: '',
-    variant_id: '',
-    // NEW: Multiple products array
-    products: [],
-    // NEW: Chain pointers — ID of next item in this path (null = end of chain)
-    next_accept_item_id: null,
-    next_decline_item_id: null,
-    // Per-item targeting (which products must be in cart for THIS item to show)
-    item_target_products_include: [],
-    item_target_collections_include: [],
-    item_target_products_exclude: [],
-    item_target_collections_exclude: [],
-    discount_code: '',
-    discount_percent: '',
-    warranty_price: '',
-    warranty_description: '',
-    warranty_covered: '',
-    badge_text: 'One-time offer',
-    badge_color: '#8b5cf6',
-    show_badge: true,
-    show_timer: false,
-    timer_minutes: 15,
-    button_text: '',
+    accept_button_text: 'Yes, add to my order',
+    decline_button_text: 'No thanks',
+    countdown_timer: { enabled: false, duration_seconds: 900 },
+    on_accept_node_id: null,
+    on_decline_node_id: null,
+    position: { x: 100, y: 100 },
     ...overrides,
   };
 }
 
-export default function OfferBuilder({ store, appConfig }) {
-  const [offers, setOffers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [step, setStep] = useState(1);
-  const [copied, setCopied] = useState(false);
-  const [showABModal, setShowABModal] = useState(false);
-  const [abVariantA, setAbVariantA] = useState(null);
-  const [abSplit, setAbSplit] = useState(50);
-  const stepContentRef = useRef(null);
+const TYPE_LABELS = {
+  single_product: 'Single Product',
+  bundle: 'Bundle',
+  quantity_upgrade: 'Quantity Upgrade',
+  subscription_upgrade: 'Subscription',
+};
 
-  // Active tab: 'active' | 'archived'
-  const [activeTab, setActiveTab] = useState('active');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
+function getDiscountLabel(discount) {
+  if (!discount || discount.value <= 0) return null;
+  if (discount.type === 'percentage') return `${discount.value}% off`;
+  if (discount.type === 'fixed_amount') return `$${discount.value} off`;
+  if (discount.type === 'fixed_price') return `$${discount.value}`;
+  return null;
+}
 
-  // Editor state
-  const [editingItem, setEditingItem] = useState(null); // { item, pathType, isMainContent }
-  const [editingMainContent, setEditingMainContent] = useState(false); // editing headline/message/timer
+// ── EdgeLine ─────────────────────────────────────────────────────────────────
 
-  // Stable refs for callbacks (prevents stale closure / immediate re-render issues)
-  const editingItemRef = useRef(editingItem);
+function EdgeLine({ edge, nodes }) {
+  const fromNode = edge.from;
+  const toNode = nodes.find(n => n.id === edge.toId);
+  if (!fromNode || !toNode) return null;
 
-  // Form state — 4-step structure (declared first so formRef can reference form directly)
-  const [form, setForm] = useState(getDefaultForm());
-  const formRef = useRef(form);
+  const sx = fromNode.position.x + (edge.type === 'accept' ? 186 : 14);
+  const sy = fromNode.position.y + 110;
+  const tx = toNode.position.x + 100;
+  const ty = toNode.position.y;
 
-  useEffect(() => {
-    editingItemRef.current = editingItem;
-  }, [editingItem]);
-
-  useEffect(() => {
-    // formRef must track form because callbacks read formRef.current after setForm calls
-    formRef.current = form;
-  }, [form]);
-
-  function getDefaultForm() {
-    return {
-      name: '',
-      status: 'draft',
-      // Step 1 — Trigger & Targeting
-      trigger_threshold: '',
-      trigger_threshold_max: '',
-      target_products_include: [],
-      target_collections_include: [],
-      target_tags_include: [],
-      target_products_exclude: [],
-      target_collections_exclude: [],
-      target_tags_exclude: [],
-      first_time_customers_only: false,
-      // Step 2 — Accept Path (upsells)
-      accept_path_items: [],
-      // Step 3 — Decline Path (downsells)
-      decline_path_items: [],
-      // Legacy / single offer (backwards compat)
-      offer_type: 'add_product',
-      headline: 'Wait! Add this to your order',
-      message: 'Get it delivered with your current order — just one click away.',
-      upsell_product_id: '',
-      upsell_product_title: '',
-      upsell_product_price: '',
-      upsell_product_image: '',
-      discount_code: '',
-      discount_amount: '',
-      discount_percent: '',
-      warranty_price: '',
-      warranty_description: '',
-      warranty_covered: '',
-      one_time_offer: true,
-      confirmation_only: true,
-      fallback_offer_id: '',
-      // Offer Content fields (used by openEditMainContent / handleEditorSave)
-      badge_text: 'One-time offer',
-      badge_color: '#8b5cf6',
-      show_badge: true,
-      show_timer: false,
-      timer_minutes: 15,
-      button_text: '',
-    };
-  }
-
-  useEffect(() => {
-    if (!store) { setLoading(false); return; }
-    loadOffers();
-  }, [store]);
-
-  useEffect(() => {
-    if (stepContentRef.current) {
-      stepContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [step]);
-
-  async function loadOffers() {
-    try {
-      const res = await api.getUpsellOffers();
-      setOffers(res.offers || []);
-    } catch (e) {
-      console.error(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function startEdit(offer) {
-    setEditing(offer);
-
-    // Parse accept/decline path items
-    let acceptItems = [];
-    let declineItems = [];
-    try {
-      if (offer.accept_path_items) {
-        const parsed = typeof offer.accept_path_items === 'string'
-          ? JSON.parse(offer.accept_path_items)
-          : offer.accept_path_items;
-        acceptItems = Array.isArray(parsed) ? parsed : [];
-      }
-      if (offer.decline_path_items) {
-        const parsed = typeof offer.decline_path_items === 'string'
-          ? JSON.parse(offer.decline_path_items)
-          : offer.decline_path_items;
-        declineItems = Array.isArray(parsed) ? parsed : [];
-      }
-    } catch (e) {}
-
-    setForm({
-      name: offer.name || '',
-      status: offer.status || (offer.active ? 'published' : 'draft'),
-      trigger_threshold: String(offer.trigger_min_amount || offer.trigger_threshold || '50'),
-      trigger_threshold_max: String(offer.trigger_max_amount || ''),
-      target_products_include: parseIdArray(offer.include_product_ids),
-      target_collections_include: parseIdArray(offer.include_collection_ids),
-      target_tags_include: parseTagArray(offer.include_tags),
-      target_products_exclude: parseIdArray(offer.exclude_product_ids),
-      target_collections_exclude: parseIdArray(offer.exclude_collection_ids),
-      target_tags_exclude: parseTagArray(offer.exclude_tags),
-      first_time_customers_only: !!offer.first_time_customer || !!offer.target_first_time_customer,
-      // New multi-item paths
-      accept_path_items: acceptItems,
-      decline_path_items: declineItems,
-      // Legacy
-      offer_type: offer.offer_type || 'add_product',
-      headline: offer.headline || 'Wait! Add this to your order',
-      message: offer.message || 'Get it delivered with your current order — just one click away.',
-      upsell_product_id: offer.upsell_product_id || '',
-      upsell_product_title: offer.product_title || offer.upsell_product_title || '',
-      upsell_product_price: offer.upsell_product_price || '',
-      upsell_product_image: offer.upsell_product_image || '',
-      discount_code: offer.discount_code || offer.upsell_discount_code || '',
-      discount_amount: offer.discount_amount || '',
-      discount_percent: offer.discount_percent ? String(offer.discount_percent) : '',
-      warranty_price: offer.warranty_price || '',
-      warranty_description: offer.warranty_description || '',
-      warranty_covered: offer.warranty_covered || '',
-      one_time_offer: offer.one_time_offer !== false,
-      confirmation_only: offer.confirmation_only !== false,
-      fallback_offer_id: offer.fallback_for_offer_id || '',
-    });
-    setStep(1);
-    setShowForm(true);
-  }
-
-  function parseIdArray(field) {
-    if (!field) return [];
-    if (Array.isArray(field)) return field;
-    try {
-      const parsed = JSON.parse(field);
-      return Array.isArray(parsed) ? parsed.map(id => ({ id: String(id) })) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function parseTagArray(field) {
-    if (!field) return [];
-    if (Array.isArray(field)) return field;
-    try {
-      const parsed = JSON.parse(field);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function closeForm() {
-    setShowForm(false);
-    setEditing(null);
-    setStep(1);
-    setForm(getDefaultForm());
-    setEditingItem(null);
-    setEditingMainContent(false);
-  }
-
-  // ── Accept Path item management ────────────────────────────────────────────
-  function addAcceptItem() {
-    if (form.accept_path_items.length >= MAX_ITEMS) return;
-    setForm(f => ({
-      ...f,
-      accept_path_items: [...f.accept_path_items, makeItem({ offer_type: 'add_product' })],
-    }));
-  }
-
-  function updateAcceptItem(id, updated) {
-    setForm(f => ({
-      ...f,
-      accept_path_items: f.accept_path_items.map(item => item.id === id ? { ...item, ...updated } : item),
-    }));
-  }
-
-  function removeAcceptItem(id) {
-    setForm(f => ({
-      ...f,
-      accept_path_items: f.accept_path_items.filter(item => item.id !== id),
-    }));
-  }
-
-  const openEditAcceptItem = useCallback((itemId) => {
-    const item = formRef.current.accept_path_items.find(i => i.id === itemId);
-    if (item) setEditingItem({ item, pathType: 'upsell', isMainContent: false });
-  }, []); // No deps — uses formRef
-
-  const openEditMainContent = useCallback(() => {
-    // Create a content item from main form fields that OfferEditor can edit
-    const contentItem = {
-      id: '__main_content__',
-      headline: formRef.current.headline,
-      message: formRef.current.message,
-      badge_text: formRef.current.badge_text,
-      badge_color: formRef.current.badge_color,
-      show_badge: formRef.current.show_badge,
-      show_timer: formRef.current.show_timer,
-      timer_minutes: formRef.current.timer_minutes,
-      button_text: formRef.current.button_text || '',
-      offer_type: 'content', // Mark as content type
-    };
-    setEditingItem({ item: contentItem, pathType: 'content', isMainContent: true });
-  }, []);
-
-  // ── Decline Path item management ────────────────────────────────────────────
-  function addDeclineItem() {
-    if (form.decline_path_items.length >= MAX_ITEMS) return;
-    setForm(f => ({
-      ...f,
-      decline_path_items: [...f.decline_path_items, makeItem({ offer_type: 'add_product' })],
-    }));
-  }
-
-  function updateDeclineItem(id, updated) {
-    setForm(f => ({
-      ...f,
-      decline_path_items: f.decline_path_items.map(item => item.id === id ? { ...item, ...updated } : item),
-    }));
-  }
-
-  function removeDeclineItem(id) {
-    setForm(f => ({
-      ...f,
-      decline_path_items: f.decline_path_items.filter(item => item.id !== id),
-    }));
-  }
-
-  const openEditDeclineItem = useCallback((itemId) => {
-    const item = formRef.current.decline_path_items.find(i => i.id === itemId);
-    if (item) setEditingItem({ item, pathType: 'downsell', isMainContent: false });
-  }, []); // No deps — uses formRef
-
-  const handleEditorSave = useCallback((updatedItem) => {
-    const current = editingItemRef.current;
-    if (!current) return;
-    if (current.isMainContent) {
-      // Saving main offer content (headline, message, badge, timer, etc.)
-      setForm(f => ({ ...f, ...updatedItem }));
-      setEditingMainContent(false);
-    } else if (current.pathType === 'upsell') {
-      updateAcceptItem(current.item.id, updatedItem);
-    } else {
-      updateDeclineItem(current.item.id, updatedItem);
-    }
-    setEditingItem(null);
-  }, []); // No deps — uses refs
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!store) return;
-
-    // Determine offer type from first accept item or legacy
-    const primaryType = form.accept_path_items.length > 0
-      ? form.accept_path_items[0].offer_type
-      : form.offer_type;
-
-    const payload = {
-      name: form.name || null,
-      status: form.status,
-      offer_type: primaryType,
-      trigger_min_amount: parseFloat(form.trigger_threshold) || 0,
-      trigger_max_amount: form.trigger_threshold_max ? parseFloat(form.trigger_threshold_max) : null,
-      target_products_include: form.target_products_include.length ? form.target_products_include.map(p => p.id || p) : null,
-      target_collections_include: form.target_collections_include.length ? form.target_collections_include.map(c => c.id || c) : null,
-      target_tags_include: form.target_tags_include.length ? form.target_tags_include : null,
-      target_products_exclude: form.target_products_exclude.length ? form.target_products_exclude.map(p => p.id || p) : null,
-      target_collections_exclude: form.target_collections_exclude.length ? form.target_collections_exclude.map(c => c.id || c) : null,
-      target_tags_exclude: form.target_tags_exclude.length ? form.target_tags_exclude : null,
-      target_first_time_customer: form.first_time_customers_only,
-      headline: form.headline || null,
-      message: form.message || null,
-      upsell_product_id: form.upsell_product_id || null,
-      upsell_product_title: form.upsell_product_title || null,
-      upsell_product_price: form.upsell_product_price ? parseFloat(form.upsell_product_price) : null,
-      upsell_product_image: form.upsell_product_image || null,
-      discount_code: form.discount_code || null,
-      discount_amount: form.discount_amount ? parseFloat(form.discount_amount) : null,
-      discount_percent: form.discount_percent ? parseFloat(form.discount_percent) : null,
-      warranty_price: form.warranty_price ? parseFloat(form.warranty_price) : null,
-      warranty_description: form.warranty_description || null,
-      warranty_covered: form.warranty_covered || null,
-      one_time_offer: form.one_time_offer,
-      confirmation_only: form.confirmation_only,
-      fallback_for_offer_id: form.fallback_offer_id || null,
-      // New multi-item flow paths
-      accept_path_items: form.accept_path_items.length ? form.accept_path_items : null,
-      decline_path_items: form.decline_path_items.length ? form.decline_path_items : null,
-    };
-
-    try {
-      if (editing) {
-        await api.updateUpsellOffer(editing.id, payload);
-      } else {
-        await api.createUpsellOffer(payload);
-      }
-      closeForm();
-      loadOffers();
-    } catch (err) {
-      alert('Error saving offer: ' + err.message);
-    }
-  }
-
-  async function togglePublish(offer) {
-    try {
-      const newStatus = offer.status === 'published' ? 'draft' : 'published';
-      await api.updateUpsellOffer(offer.id, { status: newStatus });
-      loadOffers();
-    } catch (e) {
-      alert('Error updating offer: ' + e.message);
-    }
-  }
-
-  async function archiveOffer(id) {
-    try {
-      await api.updateUpsellOffer(id, { status: 'archived' });
-      loadOffers();
-    } catch (e) {
-      alert('Error archiving offer: ' + e.message);
-    }
-  }
-
-  async function hardDeleteOffer(id) {
-    if (!confirm('Permanently delete this offer? This cannot be undone.')) return;
-    try {
-      await api.hardDeleteUpsellOffer(id);
-      loadOffers();
-    } catch (e) {
-      alert('Error deleting offer: ' + e.message);
-    }
-  }
-
-  function openABTestModal(offer) {
-    setAbVariantA(offer);
-    setAbSplit(50);
-    setShowABModal(true);
-  }
-
-  async function createABTest() {
-    try {
-      await api.cloneOfferForABTest(abVariantA.id, {
-        traffic_split_b: abSplit,
-        name: `${abVariantA.name || abVariantA.headline} — Variant B`,
-      });
-      setShowABModal(false);
-      loadOffers();
-    } catch (err) {
-      alert('Error creating A/B test: ' + err.message);
-    }
-  }
-
-  async function copyPreviewLink(offerId) {
-    const previewUrl = `${window.location.origin}${window.location.pathname}#/upsell-preview/${offerId}`;
-    try {
-      await navigator.clipboard.writeText(previewUrl);
-    } catch (e) {
-      const ta = document.createElement('textarea');
-      ta.value = previewUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  const visibleOffers = offers.filter(o => {
-    if (activeTab === 'archived') return o.status === 'archived';
-    return o.status !== 'archived';
-  }).filter(o => {
-    if (statusFilter !== 'all') return o.status === statusFilter;
-    return true;
-  }).filter(o => {
-    if (typeFilter !== 'all') return o.offer_type === typeFilter;
-    return true;
-  });
-
-  const fallbackOptions = offers.filter(o => o.id !== editing?.id && o.status !== 'archived');
-
-  function getStatusBadge(status) {
-    const map = {
-      draft: { label: 'Draft', class: 'draft' },
-      published: { label: 'Published', class: 'published' },
-      archived: { label: 'Archived', class: 'archived' },
-    };
-    const s = map[status] || map.draft;
-    return <span className={`status-badge ${s.class}`}>{s.label}</span>;
-  }
-
-  function getTypeLabel(type) {
-    return { add_product: 'Add to Order', discount_code: 'Discount', discount: 'Discount', warranty: 'Warranty' }[type] || type;
-  }
-
-  function getTriggerSummary(offer) {
-    const parts = [];
-    if (offer.trigger_min_amount || offer.trigger_threshold) parts.push(`$${offer.trigger_min_amount || offer.trigger_threshold}+`);
-    if (offer.include_product_ids) {
-      try { const arr = JSON.parse(offer.include_product_ids); if (arr.length) parts.push(`${arr.length} products`); } catch {}
-    }
-    if (offer.include_collection_ids) {
-      try { const arr = JSON.parse(offer.include_collection_ids); if (arr.length) parts.push(`${arr.length} collections`); } catch {}
-    }
-    if (offer.include_tags) {
-      try { const arr = JSON.parse(offer.include_tags); if (arr.length) parts.push(`${arr.length} tags`); } catch {}
-    }
-    if (offer.target_first_time_customer) parts.push('First-time');
-    return parts.length ? parts.join(', ') : 'All orders';
-  }
-
-  function getPathCount(offer) {
-    let acceptCount = 0, declineCount = 0;
-    try {
-      if (offer.accept_path_items) {
-        const arr = typeof offer.accept_path_items === 'string' ? JSON.parse(offer.accept_path_items) : offer.accept_path_items;
-        acceptCount = Array.isArray(arr) ? arr.length : 0;
-      }
-      if (offer.decline_path_items) {
-        const arr = typeof offer.decline_path_items === 'string' ? JSON.parse(offer.decline_path_items) : offer.decline_path_items;
-        declineCount = Array.isArray(arr) ? arr.length : 0;
-      }
-    } catch {}
-    return { acceptCount, declineCount };
-  }
-
-  // ── Step labels ─────────────────────────────────────────────────────────────
-  const STEP_LABELS = [
-    { n: 1, label: 'Trigger & Targeting' },
-    { n: 2, label: 'Accept Path' },
-    { n: 3, label: 'Decline Path' },
-    { n: 4, label: 'Review' },
-  ];
-
-  // ── Render helpers ───────────────────────────────────────────────────────────
-  function renderItemCard(item, pathType, onEdit, onRemove) {
-    const isUpsell = pathType === 'upsell';
-    const color = isUpsell ? '#8b5cf6' : '#ef4444';
-    const bg = isUpsell ? 'rgba(139,92,246,0.08)' : 'rgba(239,68,68,0.08)';
-    const typeLabel = { add_product: 'Add to Order', discount: 'Discount', warranty: 'Warranty' }[item.offer_type] || item.offer_type;
-    const price = item.offer_type === 'add_product'
-      ? (item.product_price ? `+$${parseFloat(item.product_price).toFixed(2)}` : '')
-      : item.offer_type === 'warranty'
-      ? (item.warranty_price ? `+$${parseFloat(item.warranty_price)}` : '')
-      : item.discount_percent ? `${item.discount_percent}% OFF` : '';
-
-    return (
-      <div key={item.id} className="flow-item-card" style={{ borderColor: color + '40', background: bg }}>
-        <div className="flow-item-card-header">
-          <span className="flow-item-type" style={{ color }}>{typeLabel}</span>
-          <div className="flow-item-actions">
-            <button className="btn-icon" title="Edit" onClick={() => onEdit(item.id)}
-              style={{ borderColor: color + '40', color }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-            </button>
-            <button className="btn-icon danger" title="Remove" onClick={() => onRemove(item.id)}
-              style={{ color: '#ef4444' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div className="flow-item-card-body">
-          {item.product_image && (
-            <img src={item.product_image} alt="" className="flow-item-img" />
-          )}
-          <div className="flow-item-info">
-            <div className="flow-item-headline">{item.headline || 'No headline'}</div>
-            <div className="flow-item-message">{item.message || ''}</div>
-            {price && <div className="flow-item-price" style={{ color }}>{price}</div>}
-          </div>
-        </div>
-        {item.show_timer && (
-          <div className="flow-item-timer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            {item.timer_minutes}:00
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (!store) {
-    return (
-      <div className="empty-state">
-        <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#fafafa', marginBottom: '8px' }}>Connect Your Store</h3>
-        <p style={{ color: '#71717a' }}>Connect your Shopify store to create upsell offers.</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="loading-state">
-        <div className="spinner" />
-        <span>Loading offers...</span>
-      </div>
-    );
-  }
+  const color = edge.type === 'accept' ? '#22c55e' : '#ef4444';
+  const midY = (sy + ty) / 2;
+  const path = `M ${sx} ${sy} C ${sx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`;
 
   return (
-    <div className="offer-builder">
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Offers</h1>
-          <p className="page-subtitle">Create and manage your post-purchase upsell offers</p>
-        </div>
-        <button className="btn-primary" onClick={() => { setEditing(null); setForm(getDefaultForm()); setShowForm(true); }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Create New Offer
-        </button>
-      </div>
+    <g>
+      <path d={path} stroke={color} strokeWidth="2" fill="none" strokeDasharray={edge.inProgress ? '6 4' : 'none'} />
+      <circle cx={tx} cy={ty} r="4" fill={color} />
+    </g>
+  );
+}
 
-      {/* ── Tabs ─────────────────────────────────────────────────────── */}
-      <div className="offers-tabs">
-        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>Active Offers</button>
-        <button className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`} onClick={() => setActiveTab('archived')}>Archived</button>
-      </div>
+// ── ConditionRow ──────────────────────────────────────────────────────────────
 
-      {/* ── Offer Grid ───────────────────────────────────────────────── */}
-      {visibleOffers.length === 0 ? (
-        <div className="card empty-offers">
-          <div className="empty-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
-              <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-              <line x1="7" y1="7" x2="7.01" y2="7" />
-            </svg>
+const CONDITION_TYPES = [
+  { value: 'cart_value_above', label: 'Cart value above $', fields: 'amount' },
+  { value: 'cart_value_below', label: 'Cart value below $', fields: 'amount' },
+  { value: 'cart_contains_product', label: 'Cart contains product(s)', fields: 'product_ids' },
+  { value: 'cart_contains_collection', label: 'Cart contains collection(s)', fields: 'collection_ids' },
+  { value: 'discount_code_applied', label: 'Discount code applied', fields: 'codes' },
+  { value: 'customer_tag', label: 'Customer has tag(s)', fields: 'tags' },
+  { value: 'customer_order_count', label: 'Customer order count', fields: 'operator+value' },
+  { value: 'shipping_country', label: 'Shipping country is', fields: 'countries' },
+];
+
+function ConditionRow({ condition, onChange, onRemove }) {
+  const typeDef = CONDITION_TYPES.find(t => t.value === condition.type) || CONDITION_TYPES[0];
+
+  return (
+    <div className="condition-row">
+      <select value={condition.type} onChange={e => onChange({ ...condition, type: e.target.value })}>
+        {CONDITION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </select>
+      {typeDef.fields === 'amount' && (
+        <input type="number" placeholder="$" value={condition.amount ?? ''}
+          onChange={e => onChange({ ...condition, amount: parseFloat(e.target.value) || 0 })} />
+      )}
+      {typeDef.fields === 'codes' && (
+        <input type="text" placeholder="e.g. SAVE10, FREESHIP" value={condition.codes?.join(', ') || ''}
+          onChange={e => onChange({ ...condition, codes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
+      )}
+      {typeDef.fields === 'tags' && (
+        <input type="text" placeholder="e.g. VIP, wholesale" value={condition.tags?.join(', ') || ''}
+          onChange={e => onChange({ ...condition, tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
+      )}
+      {typeDef.fields === 'operator+value' && (
+        <>
+          <select value={condition.operator || 'gt'} onChange={e => onChange({ ...condition, operator: e.target.value })}>
+            <option value="eq">=</option>
+            <option value="gt">&gt;</option>
+            <option value="lt">&lt;</option>
+          </select>
+          <input type="number" value={condition.value ?? ''} placeholder="# orders"
+            onChange={e => onChange({ ...condition, value: parseInt(e.target.value) || 0 })} />
+        </>
+      )}
+      {typeDef.fields === 'product_ids' && (
+        <span className="condition-hint">{condition.product_ids?.length || 0} product(s) selected</span>
+      )}
+      {typeDef.fields === 'collection_ids' && (
+        <span className="condition-hint">{condition.collection_ids?.length || 0} collection(s) selected</span>
+      )}
+      {typeDef.fields === 'countries' && (
+        <span className="condition-hint">{condition.countries?.length || 0} country(ies) selected</span>
+      )}
+      <button className="condition-remove" onClick={onRemove}>×</button>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export default function OfferBuilder({ store, appConfig }) {
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [funnel, setFunnel] = useState({
+    id: null,
+    name: 'Untitled Funnel',
+    status: 'draft',
+    trigger: { conditions: [], match: 'all' },
+    nodes: [],
+  });
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [wiringMode, setWiringMode] = useState(null); // { nodeId, edgeType }
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+
+  // Dragging
+  const draggingRef = useRef(null); // { nodeId, startMouseX, startMouseY, startNodeX, startNodeY }
+
+  // Product picker
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [ppSearch, setPpSearch] = useState('');
+  const [ppResults, setPpResults] = useState([]);
+  const [ppLoading, setPpLoading] = useState(false);
+  const ppSearchRef = useRef(null);
+
+  // Preview
+  const [showPreview, setShowPreview] = useState(false);
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
+  const selectedNode = funnel.nodes.find(n => n.id === selectedNodeId) || null;
+
+  const edges = [];
+  funnel.nodes.forEach(node => {
+    if (node.on_accept_node_id) {
+      edges.push({ id: `${node.id}-accept`, from: node, toId: node.on_accept_node_id, type: 'accept' });
+    }
+    if (node.on_decline_node_id) {
+      edges.push({ id: `${node.id}-decline`, from: node, toId: node.on_decline_node_id, type: 'decline' });
+    }
+  });
+
+  // Wiring preview edge
+  let wiringPreview = null;
+  if (wiringMode) {
+    const fromNode = funnel.nodes.find(n => n.id === wiringMode.nodeId);
+    if (fromNode) {
+      wiringPreview = {
+        id: 'wiring-preview',
+        from: fromNode,
+        edgeType: wiringMode.edgeType,
+      };
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function addNode() {
+    const newNode = makeNode({
+      position: {
+        x: 100 + funnel.nodes.length * 30,
+        y: 100 + funnel.nodes.length * 20,
+      },
+    });
+    setFunnel(f => ({ ...f, nodes: [...f.nodes, newNode] }));
+    setSelectedNodeId(newNode.id);
+  }
+
+  function updateNode(nodeId, updates) {
+    setFunnel(f => ({
+      ...f,
+      nodes: f.nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n),
+    }));
+  }
+
+  function updateNodePosition(nodeId, pos) {
+    updateNode(nodeId, { position: pos });
+  }
+
+  function removeNode(nodeId) {
+    setFunnel(f => ({
+      ...f,
+      nodes: f.nodes.filter(n => n.id !== nodeId),
+    }));
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+  }
+
+  function handleWire(fromNodeId, edgeType, toNodeId) {
+    const key = edgeType === 'accept' ? 'on_accept_node_id' : 'on_decline_node_id';
+    updateNode(fromNodeId, { [key]: toNodeId });
+    setWiringMode(null);
+  }
+
+  function updateTrigger(updater) {
+    setFunnel(f => ({
+      ...f,
+      trigger: typeof updater === 'function' ? updater(f.trigger) : updater,
+    }));
+  }
+
+  function addCondition() {
+    updateTrigger(t => ({
+      ...t,
+      conditions: [...t.conditions, { type: 'cart_value_above', amount: 0 }],
+    }));
+  }
+
+  function updateCondition(index, updated) {
+    updateTrigger(t => ({
+      ...t,
+      conditions: t.conditions.map((c, i) => i === index ? updated : c),
+    }));
+  }
+
+  function removeCondition(index) {
+    updateTrigger(t => ({
+      ...t,
+      conditions: t.conditions.filter((_, i) => i !== index),
+    }));
+  }
+
+  // ── Dragging ────────────────────────────────────────────────────────────────
+
+  function startDrag(e, nodeId) {
+    e.stopPropagation();
+    const node = funnel.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    draggingRef.current = {
+      nodeId,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startNodeX: node.position.x,
+      startNodeY: node.position.y,
+    };
+  }
+
+  function handleCanvasMouseMove(e) {
+    // Update cursor position for wiring preview
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+
+    if (!draggingRef.current) return;
+    const { nodeId, startMouseX, startMouseY, startNodeX, startNodeY } = draggingRef.current;
+    const dx = e.clientX - startMouseX;
+    const dy = e.clientY - startMouseY;
+    updateNodePosition(nodeId, {
+      x: Math.max(0, startNodeX + dx),
+      y: Math.max(0, startNodeY + dy),
+    });
+  }
+
+  function handleCanvasMouseUp() {
+    draggingRef.current = null;
+  }
+
+  // ── Node wiring click ───────────────────────────────────────────────────────
+
+  function handleNodeClick(nodeId) {
+    if (wiringMode) {
+      // Complete the wiring
+      if (wiringMode.nodeId !== nodeId) {
+        handleWire(wiringMode.nodeId, wiringMode.edgeType, nodeId);
+      } else {
+        setWiringMode(null);
+      }
+    } else {
+      setSelectedNodeId(nodeId);
+    }
+  }
+
+  // ── Product picker ──────────────────────────────────────────────────────────
+
+  function searchProducts(query) {
+    clearTimeout(ppSearchRef.current);
+    if (!query) { setPpResults([]); return; }
+    setPpLoading(true);
+    ppSearchRef.current = setTimeout(async () => {
+      try {
+        const res = await api.searchShopifyProducts(query, 20);
+        setPpResults(res.products || res || []);
+      } catch (e) {
+        setPpResults([]);
+      }
+      setPpLoading(false);
+    }, 300);
+  }
+
+  function handleSelectProduct(product) {
+    const variant = product.variants?.[0];
+    const variantId = variant?.id;
+    const variantTitle = variant?.title !== 'Default Title' ? variant?.title : '';
+    updateNode(selectedNodeId, {
+      product: {
+        product_id: String(product.id),
+        variant_id: String(variantId || ''),
+        title: product.title,
+        image_url: product.image || product.images?.[0]?.src || '',
+        original_price: variant?.price || '',
+        variant_title: variantTitle || '',
+      },
+    });
+    setShowProductPicker(false);
+    setPpSearch('');
+    setPpResults([]);
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────────────
+
+  async function saveFunnel() {
+    try {
+      const payload = { name: funnel.name, trigger: funnel.trigger, nodes: funnel.nodes };
+      if (funnel.id) {
+        await api.put(`/api/funnels/${funnel.id}`, payload);
+      } else {
+        const res = await api.post('/api/funnels', payload);
+        setFunnel(f => ({ ...f, id: res.funnel?.id }));
+      }
+    } catch (e) {
+      console.warn('Backend API not yet connected — funnel saved locally only');
+    }
+  }
+
+  function openPreview() {
+    setShowPreview(true);
+  }
+
+  // ── Render wiring preview line ──────────────────────────────────────────────
+
+  function getWiringLine() {
+    if (!wiringMode || !wiringPreview) return null;
+    const fromNode = wiringPreview.from;
+    const sx = fromNode.position.x + (wiringMode.edgeType === 'accept' ? 186 : 14);
+    const sy = fromNode.position.y + 110;
+    const tx = cursorPos.x;
+    const ty = cursorPos.y;
+    return { sx, sy, tx, ty };
+  }
+
+  const wiringLine = getWiringLine();
+
+  // ── Preview Modal ───────────────────────────────────────────────────────────
+
+  function renderPreview() {
+    if (!showPreview || !selectedNode) return null;
+    const node = selectedNode;
+    let discountedPrice = null;
+    if (node.product?.original_price && node.discount?.value > 0) {
+      const orig = parseFloat(node.product.original_price);
+      if (node.discount.type === 'percentage') {
+        discountedPrice = orig * (1 - node.discount.value / 100);
+      } else if (node.discount.type === 'fixed_amount') {
+        discountedPrice = orig - node.discount.value;
+      } else if (node.discount.type === 'fixed_price') {
+        discountedPrice = node.discount.value;
+      }
+    }
+
+    return (
+      <div className="preview-modal-overlay" onClick={() => setShowPreview(false)}>
+        <div className="preview-modal" onClick={e => e.stopPropagation()}>
+          <div className="preview-header">
+            <span className="preview-badge">ONE-TIME OFFER</span>
+            <button className="preview-close" onClick={() => setShowPreview(false)}>×</button>
           </div>
-          <h3>{activeTab === 'archived' ? 'No archived offers' : 'No offers yet'}</h3>
-          <p>{activeTab === 'archived' ? 'Archived offers will appear here.' : 'Create your first post-purchase upsell offer to start boosting revenue.'}</p>
-          {activeTab !== 'archived' && (
-            <button className="btn-primary" onClick={() => setShowForm(true)}>Create Your First Offer</button>
+          {node.product?.image_url && (
+            <img src={node.product.image_url} className="preview-product-image" alt="" />
+          )}
+          <div className="preview-body">
+            <h2 className="preview-headline">{node.headline}</h2>
+            <p className="preview-message">{node.message}</p>
+            {node.product?.variant_title && (
+              <p className="preview-variant">{node.product.variant_title}</p>
+            )}
+            <div className="preview-price-block">
+              {node.product?.original_price && (
+                <>
+                  <span className="preview-original-price">${node.product.original_price}</span>
+                  {discountedPrice !== null && (
+                    <>
+                      <span className="preview-discounted-price">${discountedPrice.toFixed(2)}</span>
+                      {node.discount.type === 'percentage' && (
+                        <span className="preview-savings">You save {node.discount.value}%</span>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <button className="preview-accept-btn">
+              {node.accept_button_text || 'Yes, add to my order'}
+              {discountedPrice !== null && ` — $${discountedPrice.toFixed(2)}`}
+            </button>
+            <button className="preview-decline-btn">{node.decline_button_text || 'No thanks'}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="offer-builder-root">
+      {/* Top bar */}
+      <div className="funnel-topbar">
+        <input
+          className="funnel-name-input"
+          value={funnel.name}
+          onChange={e => setFunnel(f => ({ ...f, name: e.target.value }))}
+        />
+        <span className={`status-badge ${funnel.status}`}>{funnel.status}</span>
+        <span className="node-count">{funnel.nodes.length} node{funnel.nodes.length !== 1 ? 's' : ''}</span>
+        <button className="btn-secondary" onClick={saveFunnel}>Save</button>
+        <button className="btn-primary" onClick={openPreview} disabled={!selectedNode}>Preview</button>
+      </div>
+
+      {/* Two-pane layout */}
+      <div className="funnel-body">
+        {/* Left pane */}
+        <div className="left-pane">
+          {/* Trigger editor */}
+          <div className="trigger-editor">
+            <div className="trigger-header">
+              <span className="trigger-title">Trigger</span>
+              <span className="trigger-sub">When does this funnel activate?</span>
+            </div>
+            <div className="match-toggle">
+              <span className="match-label">Match:</span>
+              <button
+                className={funnel.trigger.match === 'all' ? 'active' : ''}
+                onClick={() => updateTrigger(t => ({ ...t, match: 'all' }))}
+              >ALL</button>
+              <button
+                className={funnel.trigger.match === 'any' ? 'active' : ''}
+                onClick={() => updateTrigger(t => ({ ...t, match: 'any' }))}
+              >ANY</button>
+            </div>
+            {funnel.trigger.conditions.map((c, i) => (
+              <ConditionRow
+                key={i}
+                condition={c}
+                onChange={c2 => updateCondition(i, c2)}
+                onRemove={() => removeCondition(i)}
+              />
+            ))}
+            <button className="add-condition-btn" onClick={addCondition}>+ Add Condition</button>
+          </div>
+
+          {/* Node graph canvas */}
+          <div
+            className="node-graph-canvas"
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+            onClick={e => {
+              if (e.target === e.currentTarget) {
+                setSelectedNodeId(null);
+                setWiringMode(null);
+              }
+            }}
+          >
+            {/* SVG edges */}
+            <svg className="edges-svg">
+              {edges.map(edge => (
+                <EdgeLine key={edge.id} edge={edge} nodes={funnel.nodes} />
+              ))}
+              {/* Wiring preview */}
+              {wiringLine && (
+                <line
+                  x1={wiringLine.sx}
+                  y1={wiringLine.sy}
+                  x2={wiringLine.tx}
+                  y2={wiringLine.ty}
+                  stroke="#a78bfa"
+                  strokeWidth="2"
+                  strokeDasharray="6 4"
+                />
+              )}
+            </svg>
+
+            {/* Thank You terminal */}
+            <div className="thank-you-node">
+              <div className="thank-you-card">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="20" height="20">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>Thank You</span>
+              </div>
+            </div>
+
+            {/* Node cards */}
+            {funnel.nodes.map(node => (
+              <div
+                key={node.id}
+                className={`funnel-node-card ${selectedNodeId === node.id ? 'selected' : ''} ${wiringMode?.nodeId === node.id ? 'wiring-source' : ''}`}
+                style={{ position: 'absolute', left: node.position.x, top: node.position.y }}
+                onMouseDown={e => startDrag(e, node.id)}
+                onClick={e => { e.stopPropagation(); handleNodeClick(node.id); }}
+              >
+                <div className="node-type-badge">{TYPE_LABELS[node.type] || node.type}</div>
+                {node.product?.image_url && (
+                  <img src={node.product.image_url} className="node-thumb" alt="" />
+                )}
+                <div className="node-headline">{node.headline}</div>
+                {node.discount?.value > 0 && (
+                  <span className="discount-badge">{getDiscountLabel(node.discount)}</span>
+                )}
+                <div className="node-ports">
+                  <button
+                    className="port port-accept"
+                    onClick={e => { e.stopPropagation(); setWiringMode({ nodeId: node.id, edgeType: 'accept' }); }}
+                    title="Accept →"
+                  >✓</button>
+                  <button
+                    className="port port-decline"
+                    onClick={e => { e.stopPropagation(); setWiringMode({ nodeId: node.id, edgeType: 'decline' }); }}
+                    title="Decline →"
+                  >✗</button>
+                  <button
+                    className="port port-delete"
+                    onClick={e => { e.stopPropagation(); removeNode(node.id); }}
+                    title="Delete node"
+                  >🗑</button>
+                </div>
+              </div>
+            ))}
+
+            {/* Empty state */}
+            {funnel.nodes.length === 0 && (
+              <div className="canvas-empty-state">
+                <p>Add your first offer node to get started</p>
+              </div>
+            )}
+
+            {/* Add node button */}
+            <button className="add-node-btn" onClick={addNode}>+ Add Offer</button>
+          </div>
+        </div>
+
+        {/* Right pane */}
+        <div className="offer-editor-panel">
+          {selectedNode ? (
+            <>
+              <div className="editor-header">
+                <span>Edit Offer</span>
+                <button onClick={() => setSelectedNodeId(null)}>×</button>
+              </div>
+              <div className="editor-sections">
+                {/* Type selector */}
+                <div className="editor-section">
+                  <div className="section-label">Offer Type</div>
+                  <div className="type-selector">
+                    {Object.entries(TYPE_LABELS).map(([t, label]) => (
+                      <button
+                        key={t}
+                        className={selectedNode.type === t ? 'active' : ''}
+                        onClick={() => updateNode(selectedNodeId, { type: t })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Product */}
+                <div className="editor-section">
+                  <div className="section-label">Product</div>
+                  {selectedNode.product ? (
+                    <div className="selected-product">
+                      <img src={selectedNode.product.image_url} alt="" />
+                      <div className="selected-product-info">
+                        <div className="selected-product-title">{selectedNode.product.title}</div>
+                        {selectedNode.product.variant_title && (
+                          <div className="selected-product-variant">{selectedNode.product.variant_title}</div>
+                        )}
+                        <div className="selected-product-price">${selectedNode.product.original_price}</div>
+                      </div>
+                      <button onClick={() => updateNode(selectedNodeId, { product: null })}>×</button>
+                    </div>
+                  ) : (
+                    <button className="select-product-btn" onClick={() => setShowProductPicker(true)}>
+                      + Select Product
+                    </button>
+                  )}
+                </div>
+
+                {/* Quantity */}
+                <div className="editor-section">
+                  <div className="section-label">Quantity</div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={selectedNode.quantity}
+                    onChange={e => updateNode(selectedNodeId, { quantity: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+
+                {/* Discount */}
+                <div className="editor-section">
+                  <div className="section-label">Discount</div>
+                  <div className="discount-type-btns">
+                    {[
+                      { t: 'percentage', label: '% Off' },
+                      { t: 'fixed_amount', label: '$ Off' },
+                      { t: 'fixed_price', label: 'Fixed Price' },
+                    ].map(({ t, label }) => (
+                      <button
+                        key={t}
+                        className={selectedNode.discount.type === t ? 'active' : ''}
+                        onClick={() => updateNode(selectedNodeId, { discount: { ...selectedNode.discount, type: t } })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    value={selectedNode.discount.value}
+                    onChange={e => updateNode(selectedNodeId, { discount: { ...selectedNode.discount, value: parseFloat(e.target.value) || 0 } })}
+                  />
+                </div>
+
+                {/* Copy */}
+                <div className="editor-section">
+                  <div className="section-label">Copy</div>
+                  <label>Headline</label>
+                  <input
+                    type="text"
+                    value={selectedNode.headline}
+                    onChange={e => updateNode(selectedNodeId, { headline: e.target.value })}
+                    maxLength={80}
+                  />
+                  <label>Message</label>
+                  <textarea
+                    value={selectedNode.message}
+                    onChange={e => updateNode(selectedNodeId, { message: e.target.value })}
+                    maxLength={200}
+                  />
+                  <label>Accept button</label>
+                  <input
+                    type="text"
+                    value={selectedNode.accept_button_text}
+                    onChange={e => updateNode(selectedNodeId, { accept_button_text: e.target.value })}
+                  />
+                  <label>Decline button</label>
+                  <input
+                    type="text"
+                    value={selectedNode.decline_button_text}
+                    onChange={e => updateNode(selectedNodeId, { decline_button_text: e.target.value })}
+                  />
+                </div>
+
+                {/* Urgency */}
+                <div className="editor-section">
+                  <div className="section-label">Urgency</div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.countdown_timer?.enabled || false}
+                      onChange={e => updateNode(selectedNodeId, {
+                        countdown_timer: { ...selectedNode.countdown_timer, enabled: e.target.checked }
+                      })}
+                    />
+                    Show countdown timer
+                  </label>
+                  {selectedNode.countdown_timer?.enabled && (
+                    <div>
+                      <label>Duration (seconds)</label>
+                      <input
+                        type="number"
+                        value={selectedNode.countdown_timer.duration_seconds}
+                        onChange={e => updateNode(selectedNodeId, {
+                          countdown_timer: { ...selectedNode.countdown_timer, duration_seconds: parseInt(e.target.value) || 900 }
+                        })}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Wiring routing */}
+                <div className="editor-section">
+                  <div className="section-label">Routing</div>
+                  <div className="wire-row">
+                    <span className="wire-label accept">Accept →</span>
+                    <select
+                      value={selectedNode.on_accept_node_id || ''}
+                      onChange={e => updateNode(selectedNodeId, { on_accept_node_id: e.target.value || null })}
+                    >
+                      <option value="">Thank You</option>
+                      {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
+                        <option key={n.id} value={n.id}>{n.headline || 'Offer'}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="wire-row">
+                    <span className="wire-label decline">Decline →</span>
+                    <select
+                      value={selectedNode.on_decline_node_id || ''}
+                      onChange={e => updateNode(selectedNodeId, { on_decline_node_id: e.target.value || null })}
+                    >
+                      <option value="">Thank You</option>
+                      {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
+                        <option key={n.id} value={n.id}>{n.headline || 'Offer'}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Delete node */}
+                <div className="editor-section">
+                  <button className="delete-node-btn" onClick={() => removeNode(selectedNodeId)}>
+                    Delete Node
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="editor-empty">
+              <p>Select a node to edit</p>
+            </div>
           )}
         </div>
-      ) : (
-        <div className="offers-grid">
-          {visibleOffers.map(offer => {
-            const rate = offer.total_triggered > 0 ? ((offer.total_accepted / offer.total_triggered) * 100).toFixed(1) : '0.0';
-            const revenue = offer.revenue_lifted || 0;
-            const { acceptCount, declineCount } = getPathCount(offer);
-            return (
-              <div key={offer.id} className="offer-card">
-                <div className="offer-card-header">
-                  <div className="offer-card-name">{offer.name || offer.headline || `Offer #${offer.id}`}</div>
-                  {getStatusBadge(offer.status)}
-                </div>
-                <div className="offer-card-meta">
-                  <span className={`type-badge ${offer.offer_type}`}>{getTypeLabel(offer.offer_type)}</span>
-                  <span className="trigger-summary">{getTriggerSummary(offer)}</span>
-                </div>
-                {(acceptCount > 0 || declineCount > 0) && (
-                  <div className="offer-card-paths">
-                    {acceptCount > 0 && <span className="path-count upsell">{acceptCount} upsell{acceptCount !== 1 ? 's' : ''}</span>}
-                    {declineCount > 0 && <span className="path-count downsell">{declineCount} downsell{declineCount !== 1 ? 's' : ''}</span>}
-                  </div>
-                )}
-                <div className="offer-card-stats">
-                  <div className="offer-stat">
-                    <div className="offer-stat-label">Accept Rate</div>
-                    <div className="offer-stat-value">{rate}%</div>
-                    <div className="offer-progress-bar">
-                      <div className="offer-progress-fill" style={{ width: `${rate}%` }} />
+      </div>
+
+      {/* Product picker modal */}
+      {showProductPicker && (
+        <div className="product-picker-modal" onClick={() => setShowProductPicker(false)}>
+          <div className="product-picker-content" onClick={e => e.stopPropagation()}>
+            <div className="pp-header">
+              <span>Select Product</span>
+              <button onClick={() => setShowProductPicker(false)}>×</button>
+            </div>
+            <input
+              className="pp-search"
+              placeholder="Search products..."
+              value={ppSearch}
+              onChange={e => { setPpSearch(e.target.value); searchProducts(e.target.value); }}
+              autoFocus
+            />
+            {ppLoading && <div className="pp-loading">Searching...</div>}
+            <div className="pp-results">
+              {ppResults.map(p => (
+                <div key={p.id} className="pp-product" onClick={() => handleSelectProduct(p)}>
+                  <img
+                    src={p.image || p.images?.[0]?.src}
+                    className="pp-thumb"
+                    alt=""
+                  />
+                  <div className="pp-info">
+                    <div className="pp-name">{p.title}</div>
+                    <div className="pp-price">
+                      {p.variants?.[0]?.price ? `$${p.variants[0].price}` : '—'}
                     </div>
                   </div>
-                  <div className="offer-stat">
-                    <div className="offer-stat-label">Revenue</div>
-                    <div className="offer-stat-value revenue">${revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                  </div>
                 </div>
-                <div className="offer-card-actions">
-                  <button className="btn-icon" title="Edit" onClick={() => startEdit(offer)}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                  <button className="btn-icon" title={offer.status === 'published' ? 'Unpublish' : 'Publish'} onClick={() => togglePublish(offer)}>
-                    {offer.status === 'published' ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                      </svg>
-                    )}
-                  </button>
-                  {offer.status !== 'archived' ? (
-                    <button className="btn-icon" title="Archive" onClick={() => archiveOffer(offer.id)}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" />
-                      </svg>
-                    </button>
-                  ) : (
-                    <button className="btn-icon danger" title="Delete permanently" onClick={() => hardDeleteOffer(offer.id)}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  )}
-                  <button className="btn-icon" title="Copy preview link" onClick={() => copyPreviewLink(offer.id)}>
-                    {copied ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" width="14" height="14"><polyline points="20 6 9 17 4 12" /></svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
-                        <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
-                      </svg>
-                    )}
-                  </button>
-                  {!offer.ab_variant_group_id && (
-                    <button className="btn-icon ab-btn" title="A/B Test" onClick={() => openABTestModal(offer)}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── A/B Test Modal ───────────────────────────────────────────── */}
-      {showABModal && abVariantA && (
-        <div className="modal-overlay" onClick={() => setShowABModal(false)}>
-          <div className="modal ab-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Create A/B Test</h2>
-              <button className="modal-close" onClick={() => setShowABModal(false)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="ab-desc">Clone "<strong>{abVariantA.name || abVariantA.headline}</strong>" as Variant B and split your traffic to test performance.</p>
-              <div className="ab-preview-cards">
-                <div className="ab-card variant-a">
-                  <div className="ab-card-label">Variant A</div>
-                  <div className="ab-card-name">{abVariantA.name || abVariantA.headline || 'Current Offer'}</div>
-                  <div className="ab-card-percent">{100 - abSplit}%</div>
-                  <div className="ab-card-traffic">of traffic</div>
-                </div>
-                <div className="ab-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24"><polyline points="9 18 15 12 9 6" /></svg></div>
-                <div className="ab-card variant-b">
-                  <div className="ab-card-label">Variant B</div>
-                  <div className="ab-card-name">{abVariantA.name || abVariantA.headline || 'Offer'} — Copy</div>
-                  <div className="ab-card-percent">{abSplit}%</div>
-                  <div className="ab-card-traffic">of traffic</div>
-                </div>
-              </div>
-              <div className="ab-slider-section">
-                <label className="form-label">Traffic Split</label>
-                <div className="ab-slider-row">
-                  <span className="ab-split-label">A: {100 - abSplit}%</span>
-                  <input type="range" min="10" max="90" step="5" value={abSplit}
-                    onChange={e => setAbSplit(parseInt(e.target.value))} className="ab-slider" />
-                  <span className="ab-split-label">B: {abSplit}%</span>
-                </div>
-                <div className="ab-slider-presets">
-                  {[50, 60, 70, 80].map(v => (
-                    <button key={v} className={`preset-btn ${abSplit === v ? 'active' : ''}`} onClick={() => setAbSplit(v)}>{v / 100 === 0.5 ? '50/50' : `${v}/${100 - v}`}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="ab-info">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-                <span>Variant B will be a copy of Variant A. You can edit it after creation to change the offer content.</span>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowABModal(false)}>Cancel</button>
-              <button className="btn-primary" onClick={createABTest}>Start A/B Test</button>
+              ))}
+              {!ppLoading && ppResults.length === 0 && ppSearch && (
+                <div className="pp-empty">No products found for "{ppSearch}"</div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Offer Builder Modal (n8n-style Flow Builder) ── */}
-      {showForm && (
-        <div className="modal-overlay" onClick={closeForm}>
-          <div className="modal builder-modal super-wide-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editing ? 'Edit Offer' : 'Create New Offer'}</h2>
-              <div className="modal-header-actions">
-                {editing && editing.status === 'draft' && (
-                  <button className="btn-publish" onClick={() => setForm(f => ({ ...f, status: 'published' }))}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                    </svg>
-                    Publish
-                  </button>
-                )}
-                {editing && editing.status === 'published' && (
-                  <button className="btn-unpublish" onClick={() => setForm(f => ({ ...f, status: 'draft' }))}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                    Unpublish
-                  </button>
-                )}
-                <button className="modal-close" onClick={closeForm}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </div>
-            </div>
-
-            {/* SVG marker definitions for arrowheads */}
-            <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-              <defs>
-                <marker id="flowArrowPurple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#8b5cf6" />
-                </marker>
-                <marker id="flowArrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
-                </marker>
-                <marker id="flowArrowRed" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
-                </marker>
-                <marker id="flowArrowGray" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#71717a" />
-                </marker>
-              </defs>
-            </svg>
-
-            {/* Flow Builder Canvas */}
-            <div className="flow-builder-canvas">
-              {/* ── Trigger Node ── */}
-              <div className="flow-builder-section">
-                <div className="flow-builder-row">
-                  <div className="flow-node-wrapper trigger-node-wrapper">
-                    <div className="flow-node-card-full trigger-node-card" style={{ cursor: 'default' }}>
-                      <div className="flow-node-accent trigger-accent"></div>
-                      <div className="flow-node-content">
-                        <div className="flow-node-icon">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                          </svg>
-                        </div>
-                        <div className="flow-node-info">
-                          <div className="flow-node-title">Trigger</div>
-                          <div className="flow-node-subtitle">
-                            {form.trigger_threshold ? `$${form.trigger_threshold}+ order` : 'All orders'}
-                            {form.first_time_customers_only && ' · First-time customers'}
-                          </div>
-                          <div className="flow-node-meta">
-                            {(form.target_products_include.length > 0 || form.target_collections_include.length > 0 || form.target_tags_include.length > 0) && (
-                              <span className="flow-meta-tag">
-                                {form.target_products_include.length > 0 && `${form.target_products_include.length} products`}
-                                {form.target_collections_include.length > 0 && ` · ${form.target_collections_include.length} collections`}
-                                {form.target_tags_include.length > 0 && ` · ${form.target_tags_include.length} tags`}
-                              </span>
-                            )}
-                            {form.target_products_exclude.length > 0 && (
-                              <span className="flow-meta-tag exclude">Excludes some products</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Connector from Trigger to Content */}
-                <div className="flow-connector flow-connector-center">
-                  <svg height="32" width="20">
-                    <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#flowArrowPurple)" fill="none" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* ── Content/Offer Node ── */}
-              <div className="flow-builder-section">
-                <div className="flow-builder-row">
-                  <div className="flow-node-wrapper content-node-wrapper">
-                    <div className="flow-node-card-full content-node-card" onClick={openEditMainContent}>
-                      <div className="flow-node-accent content-accent"></div>
-                      <div className="flow-node-content">
-                        <div className="flow-node-icon">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                            <line x1="7" y1="7" x2="7.01" y2="7" />
-                          </svg>
-                        </div>
-                        <div className="flow-node-info">
-                          <div className="flow-node-title">{form.name || 'Offer Content'}</div>
-                          <div className="flow-node-subtitle">
-                            {form.headline || 'No headline set'}
-                          </div>
-                          <div className="flow-node-meta">
-                            {form.show_badge && form.badge_text && (
-                              <span className="flow-badge-tag" style={{ background: form.badge_color + '30', color: form.badge_color, borderColor: form.badge_color + '50' }}>
-                                {form.badge_text}
-                              </span>
-                            )}
-                            {form.show_timer && (
-                              <span className="flow-meta-tag timer">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                                </svg>
-                                {form.timer_minutes}:00
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flow-node-edit-hint">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Connector from Content to split */}
-                <div className="flow-connector flow-connector-center">
-                  <svg height="32" width="20">
-                    <path d="M10 0 L10 32" stroke="#8b5cf6" strokeWidth="2" markerEnd="url(#flowArrowPurple)" fill="none" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* ── Split into Accept/Decline branches ── */}
-              <div className="flow-builder-section">
-                <div className="flow-split-indicator">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                    <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
-                  </svg>
-                  Split
-                </div>
-              </div>
-
-              {/* ── Accept & Decline Branches side by side ── */}
-              <div className="flow-branches-row">
-                {/* Accept Branch */}
-                <div className="flow-branch-column accept-column">
-                  <div className="flow-branch-header accept-branch-header">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="12" height="12">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Accept Path
-                    <span className="flow-branch-count">{form.accept_path_items.length}/{MAX_ITEMS}</span>
-                  </div>
-
-                  <div className="flow-branch-content">
-                    {/* Empty state */}
-                    {form.accept_path_items.length === 0 && (
-                      <div className="flow-empty-hint">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        <p>No upsells</p>
-                        <p className="flow-empty-sub">Customer accepts offer</p>
-                      </div>
-                    )}
-
-                    {/* Upsell nodes */}
-                    {form.accept_path_items.map((item, idx) => (
-                      <div key={item.id} className="flow-item-node-wrapper">
-                        {idx === 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        {idx > 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        <div className="flow-node-card-full upsell-node-card" onClick={() => openEditAcceptItem(item.id)}>
-                          <div className="flow-node-accent upsell-accent"></div>
-                          <div className="flow-node-content">
-                            <div className="flow-node-thumb">
-                              {item.product_image ? (
-                                <img src={item.product_image} alt="" />
-                              ) : (
-                                <div className="flow-node-thumb-placeholder">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                                  </svg>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flow-node-info">
-                              <div className="flow-node-title">Upsell {idx + 1}</div>
-                              <div className="flow-node-subtitle">{item.headline || 'No headline'}</div>
-                              <div className="flow-node-meta">
-                                {item.product_price && (
-                                  <span className="flow-price">+${parseFloat(item.product_price).toFixed(2)}</span>
-                                )}
-                                {item.discount_percent && (
-                                  <span className="flow-discount">{item.discount_percent}% OFF</span>
-                                )}
-                                {item.show_timer && (
-                                  <span className="flow-meta-tag timer">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                                    </svg>
-                                    {item.timer_minutes}:00
-                                  </span>
-                                )}
-                                {(item.item_target_products_include?.length > 0 || item.item_target_products_exclude?.length > 0) && (
-                                  <span className="flow-meta-tag" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.25)' }}>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                                    </svg>
-                                    {item.item_target_products_include?.length > 0 ? `${item.item_target_products_include.length} targeted` : '1 excluded'}
-                                  </span>
-                                )}
-                              </div>
-                              {/* Chain indicators */}
-                              {item.next_accept_item_id && (
-                                <div className="flow-chain-indicator accept-chain">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                  <span>Chains to next upsell</span>
-                                </div>
-                              )}
-                              {item.next_decline_item_id && (
-                                <div className="flow-chain-indicator decline-chain">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                                  </svg>
-                                  <span>Chains to downsell</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeAcceptItem(item.id); }}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                              </svg>
-                            </div>
-                          </div>
-                          {/* Chain selectors */}
-                          <div className="flow-node-chain-row">
-                            <span className="flow-chain-select-label accept-label">→ Accept</span>
-                            <select
-                              className="flow-chain-select"
-                              value={item.next_accept_item_id || ''}
-                              onChange={(e) => { e.stopPropagation(); updateAcceptItem(item.id, { next_accept_item_id: e.target.value || null }); }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <option value="">— End of path —</option>
-                              {form.accept_path_items.filter(i => i.id !== item.id).map(i => (
-                                <option key={i.id} value={i.id}>
-                                  {i.headline || `Upsell ${form.accept_path_items.indexOf(i) + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="flow-chain-select-label decline-label">→ Decline</span>
-                            <select
-                              className="flow-chain-select"
-                              value={item.next_decline_item_id || ''}
-                              onChange={(e) => { e.stopPropagation(); updateAcceptItem(item.id, { next_decline_item_id: e.target.value || null }); }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <option value="">— End of path —</option>
-                              {form.decline_path_items.map(i => (
-                                <option key={i.id} value={i.id}>
-                                  {i.headline || `Downsell ${form.decline_path_items.indexOf(i) + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Thank You / End node */}
-                    {form.accept_path_items.length > 0 && (
-                      <div className="flow-item-node-wrapper">
-                        <div className="flow-connector">
-                          <svg height="24" width="20">
-                            <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
-                          </svg>
-                        </div>
-                        <div className="flow-node-card-full end-node-card">
-                          <div className="flow-node-accent end-accent"></div>
-                          <div className="flow-node-content">
-                            <div className="flow-node-icon">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="16" height="16">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </div>
-                            <div className="flow-node-info">
-                              <div className="flow-node-title" style={{ color: '#22c55e' }}>Thank You</div>
-                              <div className="flow-node-subtitle">Order confirmed</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Add Upsell Button */}
-                    {form.accept_path_items.length < MAX_ITEMS && (
-                      <div className="flow-add-node-wrapper">
-                        {form.accept_path_items.length > 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#22c55e" strokeWidth="2" markerEnd="url(#flowArrowGreen)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        <button type="button" className="flow-add-node-btn accept-add-btn" onClick={addAcceptItem}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                          </svg>
-                          Add Upsell
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <div className="flow-branches-divider">
-                  <div className="flow-divider-line"></div>
-                  <div className="flow-divider-label">or</div>
-                  <div className="flow-divider-line"></div>
-                </div>
-
-                {/* Decline Branch */}
-                <div className="flow-branch-column decline-column">
-                  <div className="flow-branch-header decline-branch-header">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="12" height="12">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                    Decline Path
-                    <span className="flow-branch-count">{form.decline_path_items.length}/{MAX_ITEMS}</span>
-                  </div>
-
-                  <div className="flow-branch-content">
-                    {/* Empty state */}
-                    {form.decline_path_items.length === 0 && (
-                      <div className="flow-empty-hint decline-empty">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                        <p>No downsells</p>
-                        <p className="flow-empty-sub">Customer declines offer</p>
-                      </div>
-                    )}
-
-                    {/* Downsell nodes */}
-                    {form.decline_path_items.map((item, idx) => (
-                      <div key={item.id} className="flow-item-node-wrapper">
-                        {idx === 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        {idx > 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        <div className="flow-node-card-full downsell-node-card" onClick={() => openEditDeclineItem(item.id)}>
-                          <div className="flow-node-accent downsell-accent"></div>
-                          <div className="flow-node-content">
-                            <div className="flow-node-thumb">
-                              {item.product_image ? (
-                                <img src={item.product_image} alt="" />
-                              ) : (
-                                <div className="flow-node-thumb-placeholder">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                                  </svg>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flow-node-info">
-                              <div className="flow-node-title">Downsell {idx + 1}</div>
-                              <div className="flow-node-subtitle">{item.headline || 'No headline'}</div>
-                              <div className="flow-node-meta">
-                                {item.product_price && (
-                                  <span className="flow-price">+${parseFloat(item.product_price).toFixed(2)}</span>
-                                )}
-                                {item.discount_percent && (
-                                  <span className="flow-discount">{item.discount_percent}% OFF</span>
-                                )}
-                                {item.show_timer && (
-                                  <span className="flow-meta-tag timer">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                                    </svg>
-                                    {item.timer_minutes}:00
-                                  </span>
-                                )}
-                                {(item.item_target_products_include?.length > 0 || item.item_target_products_exclude?.length > 0) && (
-                                  <span className="flow-meta-tag" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.25)' }}>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                                    </svg>
-                                    {item.item_target_products_include?.length > 0 ? `${item.item_target_products_include.length} targeted` : '1 excluded'}
-                                  </span>
-                                )}
-                              </div>
-                              {/* Chain indicators */}
-                              {item.next_decline_item_id && (
-                                <div className="flow-chain-indicator decline-chain">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                                  </svg>
-                                  <span>Chains to next downsell</span>
-                                </div>
-                              )}
-                              {item.next_accept_item_id && (
-                                <div className="flow-chain-indicator accept-chain">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                  <span>Chains to upsell</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeDeclineItem(item.id); }}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                              </svg>
-                            </div>
-                          </div>
-                          {/* Chain selectors */}
-                          <div className="flow-node-chain-row">
-                            <span className="flow-chain-select-label decline-label">→ Decline</span>
-                            <select
-                              className="flow-chain-select"
-                              value={item.next_decline_item_id || ''}
-                              onChange={(e) => { e.stopPropagation(); updateDeclineItem(item.id, { next_decline_item_id: e.target.value || null }); }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <option value="">— End of path —</option>
-                              {form.decline_path_items.filter(i => i.id !== item.id).map(i => (
-                                <option key={i.id} value={i.id}>
-                                  {i.headline || `Downsell ${form.decline_path_items.indexOf(i) + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="flow-chain-select-label accept-label">→ Accept</span>
-                            <select
-                              className="flow-chain-select"
-                              value={item.next_accept_item_id || ''}
-                              onChange={(e) => { e.stopPropagation(); updateDeclineItem(item.id, { next_accept_item_id: e.target.value || null }); }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <option value="">— End of path —</option>
-                              {form.accept_path_items.map(i => (
-                                <option key={i.id} value={i.id}>
-                                  {i.headline || `Upsell ${form.accept_path_items.indexOf(i) + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* End node */}
-                    {form.decline_path_items.length > 0 && (
-                      <div className="flow-item-node-wrapper">
-                        <div className="flow-connector">
-                          <svg height="24" width="20">
-                            <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
-                          </svg>
-                        </div>
-                        <div className="flow-node-card-full end-node-card decline-end-card">
-                          <div className="flow-node-accent end-accent-red"></div>
-                          <div className="flow-node-content">
-                            <div className="flow-node-icon">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" width="16" height="16">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                              </svg>
-                            </div>
-                            <div className="flow-node-info">
-                              <div className="flow-node-title" style={{ color: '#ef4444' }}>End</div>
-                              <div className="flow-node-subtitle">Path complete</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Add Downsell Button */}
-                    {form.decline_path_items.length < MAX_ITEMS && (
-                      <div className="flow-add-node-wrapper">
-                        {form.decline_path_items.length > 0 && (
-                          <div className="flow-connector">
-                            <svg height="24" width="20">
-                              <path d="M10 0 L10 24" stroke="#ef4444" strokeWidth="2" markerEnd="url(#flowArrowRed)" fill="none" />
-                            </svg>
-                          </div>
-                        )}
-                        <button type="button" className="flow-add-node-btn decline-add-btn" onClick={addDeclineItem}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                          </svg>
-                          Add Downsell
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Targeting Summary Bar ── */}
-              <div className="flow-targeting-bar">
-                <div className="flow-targeting-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                  <span>Min. ${form.trigger_threshold || 0}{form.trigger_threshold_max ? ` – $${form.trigger_threshold_max}` : '+'}</span>
-                </div>
-                {form.target_products_include.length > 0 && (
-                  <div className="flow-targeting-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                    </svg>
-                    <span>{form.target_products_include.length} products</span>
-                  </div>
-                )}
-                {form.target_collections_include.length > 0 && (
-                  <div className="flow-targeting-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
-                    </svg>
-                    <span>{form.target_collections_include.length} collections</span>
-                  </div>
-                )}
-                {form.first_time_customers_only && (
-                  <div className="flow-targeting-item highlight">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />
-                    </svg>
-                    <span>First-time only</span>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Form Actions ── */}
-              <form onSubmit={handleSubmit} className="flow-builder-form-actions">
-                <div className="form-actions">
-                  <button type="button" className="btn-secondary" onClick={closeForm}>Cancel</button>
-                  <button type="submit" className="btn-primary">
-                    {editing ? 'Update Offer' : 'Create Offer'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Offer Editor Slide-in Panel ── */}
-      {editingItem && (
-        <OfferEditor
-          key={editingItem.item.id}
-          item={editingItem.item}
-          pathType={editingItem.pathType}
-          onSave={handleEditorSave}
-          onClose={() => setEditingItem(null)}
-          shop={store?.shop}
-        />
-      )}
+      {/* Preview modal */}
+      {renderPreview()}
 
       <style>{`
-        .offer-builder { max-width: 1100px; }
-        .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
-        .page-title { font-size: 28px; font-weight: 700; color: #fafafa; margin: 0 0 4px; }
-        .page-subtitle { color: #71717a; font-size: 14px; margin: 0; }
-        .btn-primary { display: inline-flex; align-items: center; gap: 6px; background: #8b5cf6; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .btn-primary:hover { background: #7c3aed; }
-        .btn-secondary { background: #27272a; color: #e5e5e5; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
-        .btn-secondary:hover { background: #3f3f46; }
-        .btn-publish { display: inline-flex; align-items: center; gap: 6px; background: #22c55e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-        .btn-unpublish { display: inline-flex; align-items: center; gap: 6px; background: #27272a; color: #e5e5e5; border: 1px solid #3f3f46; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
-        .offers-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #27272a; padding-bottom: 0; }
-        .tab-btn { background: none; border: none; color: #71717a; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
-        .tab-btn:hover { color: #e5e5e5; }
-        .tab-btn.active { color: #a78bfa; border-bottom-color: #8b5cf6; }
-        .offers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-        .offer-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; transition: border-color 0.15s; }
-        .offer-card:hover { border-color: #3f3f46; }
-        .offer-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px; }
-        .offer-card-name { font-size: 15px; font-weight: 600; color: #fafafa; line-height: 1.3; }
-        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
-        .status-badge.draft { background: rgba(107,114,128,0.2); color: #9ca3af; }
-        .status-badge.published { background: rgba(34,197,94,0.15); color: #22c55e; }
-        .status-badge.archived { background: rgba(239,68,68,0.15); color: #ef4444; }
-        .offer-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-        .trigger-summary { font-size: 12px; color: #71717a; }
-        .type-badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; }
-        .type-badge.add_product { background: rgba(139,92,246,0.15); color: #a78bfa; }
-        .type-badge.warranty { background: rgba(34,197,94,0.15); color: #22c55e; }
-        .type-badge.discount, .type-badge.discount_code { background: rgba(234,179,8,0.15); color: #eab308; }
-        .offer-card-paths { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
-        .path-count { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
-        .path-count.upsell { background: rgba(34,197,94,0.1); color: #22c55e; }
-        .path-count.downsell { background: rgba(239,68,68,0.1); color: #ef4444; }
-        .offer-card-stats { display: flex; gap: 20px; margin-bottom: 14px; }
-        .offer-stat { flex: 1; }
-        .offer-stat-label { font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-        .offer-stat-value { font-size: 18px; font-weight: 700; color: #fafafa; }
-        .offer-stat-value.revenue { color: #22c55e; }
-        .offer-progress-bar { height: 3px; background: #27272a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
-        .offer-progress-fill { height: 100%; background: linear-gradient(90deg, #8b5cf6, #a78bfa); border-radius: 2px; transition: width 0.3s; }
-        .offer-card-actions { display: flex; gap: 6px; padding-top: 12px; border-top: 1px solid #27272a; }
-        .btn-icon { background: none; border: 1px solid #3f3f46; color: #71717a; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
-        .btn-icon:hover { background: #27272a; color: #e5e5e5; }
-        .btn-icon.danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; border-color: rgba(239,68,68,0.3); }
-        .btn-icon.ab-btn { color: #a78bfa; border-color: rgba(139,92,246,0.3); }
-        .btn-icon.ab-btn:hover { background: rgba(139,92,246,0.1); }
-        .empty-offers { text-align: center; padding: 60px 40px; }
-        .empty-icon { margin-bottom: 16px; color: #3f3f46; }
-        .empty-offers h3 { font-size: 18px; font-weight: 600; color: #fafafa; margin-bottom: 8px; }
-        .empty-offers p { color: #71717a; margin-bottom: 24px; font-size: 14px; }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(4px); }
-        .modal { background: #18181b; border: 1px solid #27272a; border-radius: 16px; max-height: 90vh; overflow-y: auto; }
-        .super-wide-modal { width: 980px; max-width: 95vw; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #27272a; }
-        .modal-header h2 { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0; }
-        .modal-header-actions { display: flex; align-items: center; gap: 10px; }
-        .modal-close { background: none; border: none; color: #71717a; cursor: pointer; padding: 4px; border-radius: 6px; }
-        .modal-close:hover { background: #27272a; color: #fafafa; }
-        .modal-body { padding: 24px; }
-        .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 20px 24px; border-top: 1px solid #27272a; }
-        .steps-nav { display: flex; align-items: center; gap: 0; padding: 14px 24px; border-bottom: 1px solid #27272a; background: #1f1f28; overflow-x: auto; }
-        .step-item { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: #52525b; white-space: nowrap; position: relative; }
-        .step-item.pending { color: #52525b; }
-        .step-item.active { color: #a78bfa; }
-        .step-item.completed { color: #22c55e; }
-        .step-circle { width: 24px; height: 24px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; border: 2px solid #3f3f46; transition: all 0.2s; }
-        .step-item.active .step-circle { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
-        .step-item.completed .step-circle { background: #22c55e; border-color: #22c55e; color: #fff; }
-        .step-item.pending .step-circle { color: #52525b; }
-        .step-label { transition: color 0.2s; }
-        .step-connector { position: absolute; right: -20px; width: 40px; height: 2px; background: #27272a; z-index: 0; }
-        .step-connector.filled { background: #22c55e; }
-        .flow-diagram { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: #0f0f14; border-bottom: 1px solid #27272a; flex-wrap: wrap; }
-        .flow-trigger { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #a1a1aa; background: #27272a; padding: 4px 10px; border-radius: 6px; }
-        .flow-branch-arrow { color: #52525b; }
-        .flow-branches { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .flow-branch { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
-        .flow-branch.accept-branch { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
-        .flow-branch.decline-branch { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); }
-        .flow-branch-label { display: flex; align-items: center; gap: 6px; }
-        .flow-branch-or { font-size: 11px; color: #52525b; font-weight: 600; }
-        .builder-form { padding: 24px; }
-        .step-content { min-height: 400px; }
-        .step-title { font-size: 18px; font-weight: 600; color: #fafafa; margin: 0 0 4px; }
-        .step-desc { color: #71717a; font-size: 14px; margin: 0 0 24px; }
-        .form-group { margin-bottom: 20px; }
-        .form-row { display: flex; gap: 16px; }
-        .form-row .form-group { flex: 1; }
-        .form-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #a1a1aa; margin-bottom: 8px; }
-        .optional { color: #52525b; font-weight: 400; }
-        .form-input { width: 100%; padding: 10px 14px; background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; color: #fafafa; font-size: 14px; transition: border-color 0.15s; }
-        .form-input:focus { outline: none; border-color: #8b5cf6; }
-        .form-input::placeholder { color: #3f3f46; }
-        textarea.form-input { resize: vertical; min-height: 80px; }
-        .form-hint { display: block; margin-top: 6px; font-size: 12px; color: #52525b; }
-        .targeting-section { background: rgba(255,255,255,0.02); border: 1px solid #27272a; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-        .targeting-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .toggle-label { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 4px 0; }
-        .toggle-label span { font-size: 14px; color: #a1a1aa; }
-        .toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
-        .toggle input { opacity: 0; width: 0; height: 0; }
-        .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #3f3f46; border-radius: 22px; transition: 0.2s; }
-        .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
-        .toggle input:checked + .toggle-slider { background: #8b5cf6; }
-        .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
-        .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #27272a; }
-        .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px; color: #71717a; }
-        .spinner { width: 20px; height: 20px; border: 2px solid #27272a; border-top-color: #8b5cf6; border-radius: 50%; animation: spin 0.7s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Flow builder styles */
-        .flow-path-section { }
-        .flow-path-header { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; }
-        .flow-path-header.accept-path { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: #22c55e; }
-        .flow-path-header.decline-path { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: #ef4444; }
-        .flow-path-count { margin-left: auto; font-size: 11px; opacity: 0.7; }
-        .flow-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-        .flow-item-card { border: 1px solid; border-radius: 10px; padding: 12px; transition: all 0.15s; cursor: pointer; }
-        .flow-item-card:hover { filter: brightness(1.1); }
-        .flow-item-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .flow-item-type { font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .flow-item-actions { display: flex; gap: 4px; }
-        .flow-item-card-body { display: flex; gap: 8px; align-items: flex-start; }
-        .flow-item-img { width: 36px; height: 36px; border-radius: 5px; object-fit: cover; flex-shrink: 0; }
-        .flow-item-info { flex: 1; min-width: 0; }
-        .flow-item-headline { font-size: 12px; font-weight: 600; color: #e5e5e5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .flow-item-message { font-size: 11px; color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-        .flow-item-price { font-size: 13px; font-weight: 700; margin-top: 4px; }
-        .flow-item-timer { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #ef4444; font-weight: 600; margin-top: 6px; }
-        .flow-add-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 2px dashed; border-radius: 10px; padding: 24px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; min-height: 100px; }
-        .flow-add-card:hover { filter: brightness(1.15); }
-        .flow-empty-hint { text-align: center; padding: 32px; color: #52525b; }
-        .flow-empty-hint svg { margin-bottom: 8px; }
-        .flow-empty-hint p { font-size: 13px; margin: 4px 0; }
-        .flow-empty-sub { font-size: 12px; color: #3f3f46; }
-
-        /* Flow Builder tree styles */
-        .flow-tree-section { display: flex; flex-direction: column; gap: 8px; }
-        .flow-tree-row { }
-        .flow-tree-node { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1f1f28; }
-        .flow-tree-node:last-child { border-bottom: none; }
-        .flow-node-label { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; text-transform: uppercase; min-width: 80px; flex-shrink: 0; }
-        .flow-node-label svg { flex-shrink: 0; }
-        .upsell-node .flow-node-label { color: #22c55e; }
-        .downsell-node .flow-node-label { color: #ef4444; }
-        .flow-node-card { flex: 1; min-width: 0; }
-        .flow-node-card .flow-item-card { margin: 0; }
-        .flow-add-downsell-btn { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); color: #ef4444; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
-        .flow-add-downsell-btn:hover:not(:disabled) { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); }
-        .flow-add-downsell-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .flow-add-upsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(139,92,246,0.08); border: 2px dashed rgba(139,92,246,0.3); color: #8b5cf6; padding: 14px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-top: 8px; }
-        .flow-add-upsell-btn:hover { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5); }
-        .total-branch { background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); }
-
-        /* NEW: Flowchart visual styles */
-        .flow-canvas { display: flex; flex-direction: column; gap: 0; padding: 8px 0 16px; position: relative; }
-
-        /* Trigger node */
-        .flow-trigger-node { display: flex; align-items: center; justify-content: center; gap: 8px; background: #8b5cf6; color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; width: fit-content; margin: 0 auto; box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
-        .flow-trigger-connector { display: flex; justify-content: center; height: 32px; margin-left: 0; }
-
-        /* Vertical connectors */
-        .flow-vertical-connector { display: flex; justify-content: center; height: 28px; }
-        .flow-upsell-connector-row { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 8px; }
-        .flow-upsell-connector-line { display: flex; justify-content: center; }
-
-        /* Node rows */
-        .flow-node-row { display: flex; align-items: flex-start; gap: 0; position: relative; min-height: 120px; }
-
-        /* Upsell column */
-        .upsell-col { flex: 0 0 300px; position: relative; }
-        .flow-node { display: flex; flex-direction: column; gap: 0; }
-        .flow-node-header { padding: 8px 0 6px; }
-        .flow-node.upsell-node .flow-node-header { }
-        .flow-node.downsell-node .flow-node-header { }
-
-        /* Branch column (right of upsells) */
-        .flow-branch-col { flex: 1; display: flex; align-items: center; min-height: 120px; position: relative; padding: 0 8px; }
-
-        /* Horizontal branch line */
-        .branch-line-h { flex: 1; position: relative; height: 20px; margin-right: 8px; }
-
-        /* Downsell column */
-        .downsell-col { flex: 0 0 300px; }
-
-        /* Add Downsell branch button */
-        .add-downsell-branch-btn { display: flex; align-items: center; gap: 6px; background: rgba(239,68,68,0.08); border: 2px dashed rgba(239,68,68,0.4); color: #ef4444; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-        .add-downsell-branch-btn:hover:not(:disabled) { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.6); }
-        .add-downsell-branch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        /* Add Upsell button in flow */
-        .flow-add-upsell-btn.flow-add-first { width: fit-content; margin: 8px auto 0; }
-        .flow-add-upsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(139,92,246,0.08); border: 2px dashed rgba(139,92,246,0.3); color: #8b5cf6; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .flow-add-upsell-btn:hover { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5); }
-
-        /* Empty state in flowchart */
-        .flow-empty-state { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 16px 0; }
-        .flow-empty-hint-node { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 24px 32px; background: rgba(139,92,246,0.05); border: 2px dashed rgba(139,92,246,0.2); border-radius: 12px; color: #52525b; text-align: center; }
-        .flow-empty-hint-node svg { color: #3f3f46; margin-bottom: 4px; }
-        .flow-empty-hint-node p { font-size: 13px; margin: 0; color: #71717a; }
-        .flow-empty-sub { font-size: 12px !important; color: #52525b !important; }
-
-        /* Flow end node */
-        .flow-end-node { display: flex; align-items: center; justify-content: center; gap: 6px; color: #52525b; font-size: 12px; font-weight: 500; padding: 12px 0; margin-top: 8px; }
-        .flow-end-node svg { color: #3f3f46; }
-
-        /* Review step */
-        .review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-        .review-card { background: #0f0f14; border: 1px solid #27272a; border-radius: 10px; padding: 16px; }
-        .review-card-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #a78bfa; margin-bottom: 12px; }
-        .review-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #1f1f28; font-size: 12px; }
-        .review-row:last-child { border-bottom: none; }
-        .review-label { color: #71717a; }
-        .review-value { color: #e5e5e5; font-weight: 500; }
-        .review-empty { font-size: 12px; color: #52525b; text-align: center; padding: 12px; }
-        .review-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1f1f28; }
-        .review-item:last-child { border-bottom: none; }
-        .review-item-num { width: 18px; height: 18px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #71717a; flex-shrink: 0; margin-top: 1px; }
-        .review-item-info { flex: 1; min-width: 0; }
-        .review-item-headline { font-size: 12px; font-weight: 600; color: #e5e5e5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .review-item-meta { font-size: 11px; color: #71717a; margin-top: 2px; }
-        .review-warning { display: flex; align-items: center; gap: 8px; background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #eab308; margin-bottom: 20px; }
-        .preview-link-group { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; }
-        .preview-link-row { display: flex; gap: 8px; }
-        .preview-link-input { flex: 1; font-size: 12px; color: #71717a; }
-        .btn-copy { background: #27272a; border: 1px solid #3f3f46; color: #e5e5e5; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
-        .btn-copy:hover { background: #3f3f46; }
-
-        /* A/B Test Modal */
-        .ab-modal { width: 560px; }
-        .ab-desc { color: #a1a1aa; font-size: 14px; margin: 0 0 24px; line-height: 1.5; }
-        .ab-desc strong { color: #e5e5e5; }
-        .ab-preview-cards { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 24px; }
-        .ab-card { background: #0f0f14; border: 2px solid #27272a; border-radius: 10px; padding: 16px; text-align: center; width: 140px; }
-        .ab-card.variant-a { border-color: rgba(139,92,246,0.4); }
-        .ab-card.variant-b { border-color: rgba(34,197,94,0.4); }
-        .ab-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #71717a; margin-bottom: 4px; }
-        .ab-card.variant-a .ab-card-label { color: #a78bfa; }
-        .ab-card.variant-b .ab-card-label { color: #22c55e; }
-        .ab-card-name { font-size: 12px; font-weight: 500; color: #e5e5e5; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ab-card-percent { font-size: 28px; font-weight: 700; color: #fafafa; }
-        .ab-card-traffic { font-size: 11px; color: #71717a; }
-        .ab-arrow { color: #52525b; }
-        .ab-slider-section { margin-bottom: 20px; }
-        .ab-slider-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-        .ab-split-label { font-size: 13px; font-weight: 600; color: #a1a1aa; width: 40px; text-align: center; }
-        .ab-slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: #27272a; border-radius: 3px; cursor: pointer; }
-        .ab-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: #8b5cf6; border-radius: 50%; cursor: pointer; }
-        .ab-slider-presets { display: flex; gap: 8px; margin-top: 12px; }
-        .preset-btn { background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
-        .preset-btn:hover { background: #3f3f46; }
-        .preset-btn.active { background: rgba(139,92,246,0.2); border-color: #8b5cf6; color: #a78bfa; }
-        .ab-info { display: flex; gap: 8px; align-items: flex-start; background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); border-radius: 8px; padding: 12px; font-size: 13px; color: #71717a; }
-        .ab-info svg { flex-shrink: 0; margin-top: 2px; color: #a78bfa; }
-
-        /* Shared form elements */
-        .upsell-type-selector { display: flex; gap: 8px; margin-bottom: 24px; }
-        .upsell-type-btn { display: flex; align-items: center; gap: 6px; background: #0f0f14; border: 2px solid #27272a; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #71717a; cursor: pointer; transition: all 0.15s; }
-        .upsell-type-btn:hover { border-color: #3f3f46; color: #e5e5e5; }
-        .upsell-type-btn.active { border-color: #8b5cf6; background: rgba(139,92,246,0.1); color: #a78bfa; }
-        .type-fields { background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-        .warranty-fields { border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.03); }
-        .urgency-options { background: rgba(139,92,246,0.05); border: 1px solid rgba(139,92,246,0.15); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-        .urgency-title { font-size: 12px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-
-        /* NEW: Flow Overview Mini-Diagram */
-        .flow-overview-mini { background: #0f0f14; border: 1px solid #27272a; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
-        .flow-overview-title { font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-        .flow-overview-diagram { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
-        .flow-overview-node { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
-        .flow-overview-node.checkout-node { background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); color: #a78bfa; }
-        .flow-overview-node.offer-node { background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.25); color: #c4b5fd; }
-        .flow-overview-node.accept-node { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #22c55e; }
-        .flow-overview-node.end-node { background: rgba(34,197,94,0.05); border: 1px solid rgba(34,197,94,0.2); color: #71717a; }
-        .flow-overview-node.decline-node { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
-        .flow-overview-node.end-node.decline-end { background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.2); color: #71717a; }
-        .flow-overview-arrow { color: #52525b; font-size: 14px; }
-        .flow-overview-arrow.flow-overview-branch-arrow { color: #ef4444; }
-        .flow-overview-arrow.decline-arrow { color: #ef4444; }
-        .flow-overview-decline-path { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-        .flow-overview-decline-path .flow-overview-arrow { color: #ef4444; }
-
-        /* NEW: Decline Step Title */
-        .decline-step-title { color: #ef4444 !important; }
-        .decline-step-desc { color: #71717a !important; }
-
-        /* NEW: Decline Flow Canvas */
-        .decline-flow-canvas { }
-        .decline-trigger-node { background: #ef4444 !important; box-shadow: 0 4px 12px rgba(239,68,68,0.3) !important; }
-        .decline-end-node { color: #ef4444 !important; }
-        .decline-end-node svg { color: #ef4444 !important; }
-
-        /* NEW: Linear Flow Container */
-        .flow-linear-container { display: flex; flex-direction: column; gap: 0; padding: 8px 0 16px; }
-        .flow-linear-row { display: flex; flex-direction: column; align-items: center; gap: 0; }
-
-        /* NEW: Red themed Add Downsell button */
-        .flow-add-downsell-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(239,68,68,0.08); border: 2px dashed rgba(239,68,68,0.3); color: #ef4444; padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .flow-add-downsell-btn:hover { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.5); }
-        .flow-add-downsell-btn.flow-add-first { width: fit-content; margin: 8px auto 0; }
-
-        /* ══════════════════════════════════════════════════════════════════
-           NEW: n8n-style Flow Builder CSS
-           ══════════════════════════════════════════════════════════════════ */
-
-        /* Flow Builder Canvas - main container */
-        .flow-builder-canvas {
-          padding: 20px 24px;
+        /* ── Reset / base ─────────────────────────────────────────────────── */
+        .offer-builder-root {
           display: flex;
           flex-direction: column;
-          gap: 0;
-          max-height: calc(90vh - 120px);
-          overflow-y: auto;
-        }
-
-        /* Builder section (groups nodes + connectors) */
-        .flow-builder-section {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0;
-        }
-
-        /* Row of nodes (centered) */
-        .flow-builder-row {
-          display: flex;
-          justify-content: center;
-          width: 100%;
-        }
-
-        /* Node wrapper (centers the card) */
-        .flow-node-wrapper {
-          display: flex;
-          justify-content: center;
-        }
-
-        /* Full node card (n8n style - wide card ~140-160px) */
-        .flow-node-card-full {
-          display: flex;
-          align-items: stretch;
+          height: 100vh;
           background: #0f0f14;
-          border: 1px solid #27272a;
-          border-radius: 10px;
+          color: #fafafa;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           overflow: hidden;
-          cursor: pointer;
-          transition: all 0.15s;
-          width: 100%;
-          max-width: 340px;
-          min-width: 280px;
         }
 
-        .flow-node-card-full:hover {
-          border-color: #3f3f46;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-
-        /* Left accent bar */
-        .flow-node-accent {
-          width: 4px;
+        /* ── Top bar ──────────────────────────────────────────────────────── */
+        .funnel-topbar {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 20px;
+          border-bottom: 1px solid #27272a;
+          background: #0f0f14;
           flex-shrink: 0;
         }
-        .trigger-accent { background: #8b5cf6; }
-        .content-accent { background: #8b5cf6; }
-        .upsell-accent { background: #22c55e; }
-        .downsell-accent { background: #ef4444; }
-        .end-accent { background: #22c55e; }
-        .end-accent-red { background: #ef4444; }
-
-        /* Node content (icon + info) */
-        .flow-node-content {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 12px 14px;
-          flex: 1;
-          min-width: 0;
-        }
-
-        /* Node icon */
-        .flow-node-icon {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
-          background: #1f1f28;
-          flex-shrink: 0;
-          color: #a1a1aa;
-        }
-
-        /* Node info */
-        .flow-node-info {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .flow-node-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #e5e5e5;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .flow-node-subtitle {
-          font-size: 12px;
-          color: #71717a;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          margin-top: 2px;
-        }
-
-        .flow-node-meta {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-top: 4px;
-          flex-wrap: wrap;
-        }
-
-        /* Flow metadata tags */
-        .flow-meta-tag {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-          background: rgba(139,92,246,0.1);
-          color: #a78bfa;
-          border: 1px solid rgba(139,92,246,0.2);
-        }
-        .flow-meta-tag.exclude {
-          background: rgba(239,68,68,0.1);
-          color: #f87171;
-          border-color: rgba(239,68,68,0.2);
-        }
-        .flow-meta-tag.timer {
-          background: rgba(234,179,8,0.1);
-          color: #fbbf24;
-          border-color: rgba(234,179,8,0.2);
-        }
-
-        /* Flow price/discount */
-        .flow-price {
-          font-size: 12px;
+        .funnel-name-input {
+          background: transparent;
+          border: none;
+          color: #fafafa;
+          font-size: 18px;
           font-weight: 700;
-          color: #22c55e;
-        }
-        .flow-discount {
-          font-size: 11px;
-          font-weight: 700;
-          color: #f59e0b;
-          background: rgba(245,158,11,0.1);
-          padding: 1px 5px;
-          border-radius: 4px;
-        }
-
-        /* Badge tag in node */
-        .flow-badge-tag {
-          display: inline-flex;
-          align-items: center;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-          border: 1px solid;
-        }
-
-        /* Edit hint icon */
-        .flow-node-edit-hint {
-          color: #52525b;
-          flex-shrink: 0;
-          transition: color 0.15s;
-        }
-        .flow-node-card-full:hover .flow-node-edit-hint {
-          color: #8b5cf6;
-        }
-
-        /* Flow connector (SVG arrow) */
-        .flow-connector {
-          display: flex;
-          justify-content: center;
-        }
-        .flow-connector-center {
-          margin-left: 0;
-        }
-
-        /* Split indicator */
-        .flow-split-indicator {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          font-weight: 600;
-          color: #71717a;
-          padding: 8px 0;
-        }
-
-        /* Two-column branches row */
-        .flow-branches-row {
-          display: flex;
-          gap: 16px;
-          width: 100%;
-          align-items: stretch;
-        }
-
-        /* Branch column */
-        .flow-branch-column {
           flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 0;
-          min-width: 0;
-        }
-
-        /* Branch header */
-        .flow-branch-header {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          font-weight: 700;
-          padding: 8px 12px;
-          border-radius: 8px;
-          margin-bottom: 12px;
-        }
-        .accept-branch-header {
-          background: rgba(34,197,94,0.08);
-          border: 1px solid rgba(34,197,94,0.2);
-          color: #22c55e;
-        }
-        .decline-branch-header {
-          background: rgba(239,68,68,0.08);
-          border: 1px solid rgba(239,68,68,0.2);
-          color: #ef4444;
-        }
-        .flow-branch-count {
-          margin-left: auto;
-          font-size: 11px;
-          opacity: 0.7;
-          font-weight: 500;
-        }
-
-        /* Branch content area */
-        .flow-branch-content {
-          display: flex;
-          flex-direction: column;
-          gap: 0;
-        }
-
-        /* Branches divider */
-        .flow-branches-divider {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-          padding: 40px 12px 0;
-          flex-shrink: 0;
-        }
-        .flow-divider-line {
-          width: 1px;
-          flex: 1;
-          background: #27272a;
-          min-height: 20px;
-        }
-        .flow-divider-label {
-          font-size: 11px;
-          font-weight: 700;
-          color: #52525b;
-          text-transform: uppercase;
-        }
-
-        /* Empty hint within branch */
-        .flow-empty-hint {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          padding: 24px 16px;
-          color: #3f3f46;
-          text-align: center;
-          border: 2px dashed rgba(34,197,94,0.2);
-          border-radius: 10px;
-          margin-bottom: 12px;
-        }
-        .flow-empty-hint.decline-empty {
-          border-color: rgba(239,68,68,0.2);
-        }
-        .flow-empty-hint svg { color: #3f3f46; }
-        .flow-empty-hint p { font-size: 13px; margin: 0; color: #71717a; }
-        .flow-empty-hint .flow-empty-sub { font-size: 11px; color: #52525b; }
-
-        /* Individual item node wrapper */
-        .flow-item-node-wrapper {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0;
-        }
-
-        /* Add node button wrapper */
-        .flow-add-node-wrapper {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0;
-        }
-
-        /* Add node button */
-        .flow-add-node-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          width: 100%;
-          padding: 10px 14px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s;
-          border: 2px dashed;
-        }
-        .accept-add-btn {
-          background: rgba(34,197,94,0.05);
-          border-color: rgba(34,197,94,0.3);
-          color: #22c55e;
-        }
-        .accept-add-btn:hover {
-          background: rgba(34,197,94,0.1);
-          border-color: rgba(34,197,94,0.5);
-        }
-        .decline-add-btn {
-          background: rgba(239,68,68,0.05);
-          border-color: rgba(239,68,68,0.3);
-          color: #ef4444;
-        }
-        .decline-add-btn:hover {
-          background: rgba(239,68,68,0.1);
-          border-color: rgba(239,68,68,0.5);
-        }
-
-        /* Thumbanil in node */
-        .flow-node-thumb {
-          width: 36px;
-          height: 36px;
+          outline: none;
+          padding: 4px 8px;
           border-radius: 6px;
-          overflow: hidden;
-          flex-shrink: 0;
-          background: #1f1f28;
         }
-        .flow-node-thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
+        .funnel-name-input:hover,
+        .funnel-name-input:focus {
+          background: #18181b;
         }
-        .flow-node-thumb-placeholder {
-          width: 100%;
-          height: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #3f3f46;
+        .status-badge {
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 3px 10px;
+          border-radius: 20px;
+          letter-spacing: 0.5px;
         }
-
-        /* Remove button on node */
-        .flow-node-remove {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 24px;
-          height: 24px;
-          border-radius: 4px;
-          color: #52525b;
-          cursor: pointer;
-          transition: all 0.15s;
-          flex-shrink: 0;
-        }
-        .flow-node-remove:hover {
-          background: rgba(239,68,68,0.15);
-          color: #ef4444;
-        }
-
-        /* Targeting bar */
-        .flow-targeting-bar {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 12px 16px;
-          background: #0f0f14;
-          border: 1px solid #27272a;
-          border-radius: 10px;
-          margin-top: 16px;
-          flex-wrap: wrap;
-        }
-        .flow-targeting-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          font-weight: 500;
-          color: #71717a;
-        }
-        .flow-targeting-item.highlight {
-          color: #a78bfa;
-        }
-
-        /* NEW: Chain indicator on flow nodes */
-        .flow-chain-indicator {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-          margin-top: 4px;
-        }
-        .flow-chain-indicator.accept-chain {
-          background: rgba(34,197,94,0.1);
-          color: #22c55e;
-          border: 1px solid rgba(34,197,94,0.25);
-        }
-        .flow-chain-indicator.decline-chain {
-          background: rgba(239,68,68,0.1);
-          color: #ef4444;
-          border: 1px solid rgba(239,68,68,0.25);
-        }
-
-        /* NEW: Chain selector row within node card */
-        .flow-node-chain-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 6px 10px;
-          background: #1a1a1f;
-          border-top: 1px solid #27272a;
-          margin-top: 6px;
-        }
-        .flow-chain-select-label {
-          font-size: 10px;
-          font-weight: 600;
-          color: #71717a;
-          white-space: nowrap;
-        }
-        .flow-chain-select-label.accept-label { color: #22c55e; }
-        .flow-chain-select-label.decline-label { color: #ef4444; }
-        .flow-chain-select {
-          flex: 1;
+        .status-badge.draft { background: #3f3f46; color: #a1a1aa; }
+        .status-badge.active { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid #22c55e; }
+        .status-badge.archived { background: #27272a; color: #71717a; }
+        .node-count { color: #71717a; font-size: 13px; margin-left: auto; }
+        .btn-secondary {
           background: #27272a;
           border: 1px solid #3f3f46;
           color: #a1a1aa;
-          padding: 3px 6px;
-          border-radius: 4px;
+          padding: 8px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .btn-secondary:hover { background: #3f3f46; color: #fafafa; }
+        .btn-primary {
+          background: #8b5cf6;
+          border: none;
+          color: #fff;
+          padding: 8px 20px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .btn-primary:hover { background: #7c3aed; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── Body ─────────────────────────────────────────────────────────── */
+        .funnel-body {
+          display: flex;
+          flex: 1;
+          overflow: hidden;
+        }
+        .left-pane {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          padding: 16px;
+          gap: 16px;
+          min-width: 0;
+        }
+
+        /* ── Trigger editor ────────────────────────────────────────────────── */
+        .trigger-editor {
+          background: #18181b;
+          border: 1px solid #27272a;
+          border-radius: 10px;
+          padding: 16px;
+          flex-shrink: 0;
+        }
+        .trigger-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+        .trigger-title { font-size: 14px; font-weight: 700; color: #fafafa; }
+        .trigger-sub { font-size: 12px; color: #71717a; }
+        .match-toggle {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        .match-label { font-size: 12px; color: #71717a; }
+        .match-toggle button {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 4px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .match-toggle button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+        .condition-row {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 8px;
+          padding: 8px;
+          background: #0f0f14;
+          border-radius: 6px;
+          margin-bottom: 8px;
+        }
+        .condition-row select {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #fafafa;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 13px;
+          flex-shrink: 0;
+        }
+        .condition-row input {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #fafafa;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 13px;
+          width: 100px;
+        }
+        .condition-row input[type=text] { width: 160px; }
+        .condition-hint { font-size: 12px; color: #71717a; }
+        .condition-remove {
+          background: none;
+          border: none;
+          color: #71717a;
+          cursor: pointer;
+          font-size: 16px;
+          padding: 0 4px;
+          margin-left: auto;
+        }
+        .condition-remove:hover { color: #ef4444; }
+        .add-condition-btn {
+          border: 2px dashed #27272a;
+          background: none;
+          color: #71717a;
+          padding: 8px;
+          border-radius: 8px;
+          cursor: pointer;
+          width: 100%;
+          font-size: 13px;
+          font-weight: 600;
+          transition: all 0.15s;
+        }
+        .add-condition-btn:hover { border-color: #8b5cf6; color: #a78bfa; }
+
+        /* ── Node graph canvas ────────────────────────────────────────────── */
+        .node-graph-canvas {
+          flex: 1;
+          position: relative;
+          overflow: auto;
+          background: #0f0f14;
+          border-radius: 10px;
+          border: 1px solid #27272a;
+          min-height: 500px;
+        }
+        .edges-svg {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          overflow: visible;
+        }
+        .canvas-empty-state {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #71717a;
+          font-size: 15px;
+          pointer-events: none;
+        }
+
+        /* ── Node card ────────────────────────────────────────────────────── */
+        .funnel-node-card {
+          background: #18181b;
+          border: 2px solid #27272a;
+          border-radius: 12px;
+          padding: 16px;
+          width: 200px;
+          cursor: pointer;
+          transition: border-color 0.15s, box-shadow 0.15s;
+          user-select: none;
+        }
+        .funnel-node-card:hover { border-color: #3f3f46; }
+        .funnel-node-card.selected { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.2); }
+        .funnel-node-card.wiring-source { border-color: #a78bfa; }
+        .node-type-badge {
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: #71717a;
+          margin-bottom: 8px;
+          letter-spacing: 0.5px;
+        }
+        .node-thumb {
+          width: 100%;
+          height: 80px;
+          object-fit: cover;
+          border-radius: 6px;
+          margin-bottom: 8px;
+          display: block;
+        }
+        .node-headline {
+          font-size: 13px;
+          font-weight: 600;
+          color: #fafafa;
+          margin-bottom: 6px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .discount-badge {
+          display: inline-block;
           font-size: 11px;
+          font-weight: 700;
+          color: #22c55e;
+          background: rgba(34,197,94,0.1);
+          padding: 2px 8px;
+          border-radius: 4px;
+          margin-bottom: 4px;
+        }
+        .node-ports {
+          display: flex;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .port {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          border: 2px solid;
+          background: none;
+          cursor: pointer;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .port-accept { border-color: #22c55e; color: #22c55e; }
+        .port-accept:hover { background: #22c55e; color: #fff; }
+        .port-decline { border-color: #ef4444; color: #ef4444; }
+        .port-decline:hover { background: #ef4444; color: #fff; }
+        .port-delete { border-color: #3f3f46; color: #71717a; font-size: 10px; }
+        .port-delete:hover { background: #3f3f46; color: #fafafa; }
+
+        /* ── Thank you node ────────────────────────────────────────────────── */
+        .thank-you-node {
+          position: absolute;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          pointer-events: none;
+        }
+        .thank-you-card {
+          background: rgba(34,197,94,0.1);
+          border: 2px solid #22c55e;
+          border-radius: 12px;
+          padding: 12px 24px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #22c55e;
+          font-weight: 700;
+          font-size: 14px;
+        }
+
+        /* ── Add node button ───────────────────────────────────────────────── */
+        .add-node-btn {
+          position: absolute;
+          bottom: 20px;
+          right: 20px;
+          background: #8b5cf6;
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          padding: 12px 24px;
+          font-weight: 700;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background 0.15s;
+          box-shadow: 0 4px 14px rgba(139,92,246,0.35);
+        }
+        .add-node-btn:hover { background: #7c3aed; }
+
+        /* ── Offer editor panel ────────────────────────────────────────────── */
+        .offer-editor-panel {
+          width: 420px;
+          flex-shrink: 0;
+          background: #18181b;
+          border-left: 1px solid #27272a;
+          display: flex;
+          flex-direction: column;
+          overflow-y: auto;
+        }
+        .editor-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid #27272a;
+          font-weight: 700;
+          color: #fafafa;
+          font-size: 15px;
+          flex-shrink: 0;
+          position: sticky;
+          top: 0;
+          background: #18181b;
+          z-index: 1;
+        }
+        .editor-header button {
+          background: none;
+          border: none;
+          color: #71717a;
+          cursor: pointer;
+          font-size: 20px;
+          padding: 0;
+          line-height: 1;
+        }
+        .editor-header button:hover { color: #fafafa; }
+        .editor-sections {
+          padding: 16px 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .editor-section {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .section-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: #71717a;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .type-selector {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .type-selector button {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-weight: 600;
+        }
+        .type-selector button:hover { background: #3f3f46; color: #fafafa; }
+        .type-selector button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+        .select-product-btn {
+          background: rgba(139,92,246,0.1);
+          border: 2px dashed rgba(139,92,246,0.4);
+          color: #a78bfa;
+          padding: 16px;
+          border-radius: 10px;
+          width: 100%;
+          font-weight: 600;
+          cursor: pointer;
+          font-size: 14px;
+          transition: all 0.15s;
+        }
+        .select-product-btn:hover { background: rgba(139,92,246,0.2); border-color: #8b5cf6; }
+        .selected-product {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          background: #0f0f14;
+          border: 1px solid #27272a;
+          border-radius: 8px;
+          padding: 10px;
+        }
+        .selected-product img {
+          width: 48px;
+          height: 48px;
+          object-fit: cover;
+          border-radius: 6px;
+          flex-shrink: 0;
+        }
+        .selected-product-info { flex: 1; min-width: 0; }
+        .selected-product-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #fafafa;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .selected-product-variant { font-size: 11px; color: #71717a; margin-top: 2px; }
+        .selected-product-price { font-size: 13px; color: #22c55e; font-weight: 700; margin-top: 2px; }
+        .selected-product button {
+          background: none;
+          border: none;
+          color: #71717a;
+          cursor: pointer;
+          font-size: 16px;
+          padding: 4px;
+          margin-left: auto;
+          flex-shrink: 0;
+        }
+        .selected-product button:hover { color: #ef4444; }
+        .discount-type-btns {
+          display: flex;
+          gap: 6px;
+        }
+        .discount-type-btns button {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-weight: 600;
+        }
+        .discount-type-btns button:hover { background: #3f3f46; color: #fafafa; }
+        .discount-type-btns button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+        input[type=number],
+        input[type=text] {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #fafafa;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-size: 14px;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        input[type=number]:focus,
+        input[type=text]:focus {
+          outline: none;
+          border-color: #8b5cf6;
+        }
+        textarea {
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #fafafa;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-size: 14px;
+          width: 100%;
+          box-sizing: border-box;
+          resize: vertical;
+          min-height: 60px;
+          font-family: inherit;
+        }
+        textarea:focus { outline: none; border-color: #8b5cf6; }
+        label {
+          font-size: 12px;
+          color: #a1a1aa;
+          font-weight: 500;
+        }
+        .checkbox-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
           cursor: pointer;
         }
-        .flow-chain-select:focus { outline: none; border-color: #8b5cf6; }
-
-        /* Form actions wrapper */
-        .flow-builder-form-actions {
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid #27272a;
+        .checkbox-label input[type=checkbox] {
+          width: 16px;
+          height: 16px;
+          accent-color: #8b5cf6;
         }
+        .wire-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .wire-label {
+          font-size: 12px;
+          font-weight: 700;
+          width: 70px;
+          flex-shrink: 0;
+        }
+        .wire-label.accept { color: #22c55e; }
+        .wire-label.decline { color: #ef4444; }
+        .wire-row select {
+          flex: 1;
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #fafafa;
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-size: 13px;
+        }
+        .wire-row select:focus { outline: none; border-color: #8b5cf6; }
+        .delete-node-btn {
+          background: rgba(239,68,68,0.1);
+          border: 1px solid rgba(239,68,68,0.3);
+          color: #ef4444;
+          padding: 8px;
+          border-radius: 8px;
+          width: 100%;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .delete-node-btn:hover { background: rgba(239,68,68,0.2); border-color: #ef4444; }
+        .editor-empty {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #71717a;
+          font-size: 14px;
+        }
+
+        /* ── Product picker modal ──────────────────────────────────────────── */
+        .product-picker-modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          backdrop-filter: blur(4px);
+        }
+        .product-picker-content {
+          background: #18181b;
+          border: 1px solid #27272a;
+          border-radius: 14px;
+          width: 580px;
+          max-height: 80vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .pp-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid #27272a;
+          font-weight: 700;
+          font-size: 15px;
+          color: #fafafa;
+        }
+        .pp-header button {
+          background: none;
+          border: none;
+          color: #71717a;
+          cursor: pointer;
+          font-size: 20px;
+        }
+        .pp-header button:hover { color: #fafafa; }
+        .pp-search {
+          background: #0f0f14;
+          border: none;
+          border-bottom: 1px solid #27272a;
+          color: #fafafa;
+          padding: 14px 20px;
+          font-size: 15px;
+          outline: none;
+        }
+        .pp-search::placeholder { color: #71717a; }
+        .pp-loading {
+          padding: 16px;
+          text-align: center;
+          color: #71717a;
+          font-size: 13px;
+        }
+        .pp-results {
+          overflow-y: auto;
+          padding: 8px;
+        }
+        .pp-product {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          padding: 10px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .pp-product:hover { background: #27272a; }
+        .pp-thumb {
+          width: 56px;
+          height: 56px;
+          object-fit: cover;
+          border-radius: 6px;
+          flex-shrink: 0;
+        }
+        .pp-info { flex: 1; min-width: 0; }
+        .pp-name {
+          font-size: 14px;
+          font-weight: 600;
+          color: #fafafa;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .pp-price { font-size: 13px; color: #22c55e; font-weight: 700; margin-top: 3px; }
+        .pp-empty { padding: 24px; text-align: center; color: #71717a; font-size: 13px; }
+
+        /* ── Preview modal ────────────────────────────────────────────────── */
+        .preview-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.8);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 2000;
+          backdrop-filter: blur(4px);
+        }
+        .preview-modal {
+          background: #fff;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 560px;
+          overflow: hidden;
+          color: #1a1a1a;
+          max-height: 90vh;
+          overflow-y: auto;
+        }
+        .preview-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: #f5f5f5;
+        }
+        .preview-badge {
+          background: #8b5cf6;
+          color: #fff;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          padding: 4px 10px;
+          border-radius: 20px;
+        }
+        .preview-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          color: #71717a;
+          cursor: pointer;
+          line-height: 1;
+        }
+        .preview-product-image {
+          width: 100%;
+          max-height: 280px;
+          object-fit: cover;
+          display: block;
+        }
+        .preview-body { padding: 20px; }
+        .preview-headline {
+          font-size: 22px;
+          font-weight: 800;
+          color: #1a1a1a;
+          margin: 0 0 8px;
+        }
+        .preview-message {
+          font-size: 15px;
+          color: #525252;
+          margin: 0 0 12px;
+          line-height: 1.5;
+        }
+        .preview-variant { font-size: 13px; color: #71717a; margin: 0 0 12px; }
+        .preview-price-block {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+        .preview-original-price {
+          font-size: 18px;
+          color: #ef4444;
+          text-decoration: line-through;
+        }
+        .preview-discounted-price {
+          font-size: 24px;
+          font-weight: 800;
+          color: #22c55e;
+        }
+        .preview-savings {
+          background: rgba(34,197,94,0.1);
+          color: #22c55e;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 3px 8px;
+          border-radius: 4px;
+        }
+        .preview-accept-btn {
+          width: 100%;
+          background: #8b5cf6;
+          color: #fff;
+          border: none;
+          border-radius: 10px;
+          padding: 16px;
+          font-size: 16px;
+          font-weight: 700;
+          cursor: pointer;
+          margin-bottom: 10px;
+          transition: background 0.15s;
+        }
+        .preview-accept-btn:hover { background: #7c3aed; }
+        .preview-decline-btn {
+          width: 100%;
+          background: none;
+          border: none;
+          color: #71717a;
+          font-size: 14px;
+          cursor: pointer;
+          padding: 8px;
+          text-decoration: underline;
+        }
+        .preview-decline-btn:hover { color: #525252; }
       `}</style>
     </div>
   );

@@ -143,6 +143,33 @@ async function initSqlite() {
     )
   `);
 
+  // Funnels table (004 migration)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS funnels (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT 'Untitled Funnel',
+      status TEXT NOT NULL DEFAULT 'draft',
+      trigger_json TEXT,
+      nodes_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Funnel events table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS funnel_events (
+      id TEXT PRIMARY KEY,
+      funnel_id TEXT NOT NULL,
+      node_id TEXT,
+      event_type TEXT NOT NULL,
+      amount REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (funnel_id) REFERENCES funnels(id) ON DELETE CASCADE
+    )
+  `);
+
   // Persist to disk
   const data = db.export();
   const buffer = Buffer.from(data);
@@ -300,6 +327,33 @@ async function initPostgres() {
       winner_id UUID,
       status TEXT DEFAULT 'active',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Funnels table (004 migration)
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS funnels (
+      id TEXT PRIMARY KEY,
+      store_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT 'Untitled Funnel',
+      status TEXT NOT NULL DEFAULT 'draft',
+      trigger_json TEXT,
+      nodes_json TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Funnel events table
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS funnel_events (
+      id TEXT PRIMARY KEY,
+      funnel_id TEXT NOT NULL,
+      node_id TEXT,
+      event_type TEXT NOT NULL,
+      amount REAL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (funnel_id) REFERENCES funnels(id) ON DELETE CASCADE
     )
   `);
 
