@@ -59,6 +59,99 @@ router.get('/products/search', verifyShop, async (req, res) => {
   }
 });
 
+// ── GET /api/shopify/products ─────────────────────────────────────────────────
+// GraphQL-powered product listing with rich variant data (inventory, compareAtPrice, images)
+router.get('/products', verifyShop, async (req, res) => {
+  const { query = '', cursor = null, limit = 25 } = req.query;
+  try {
+    const shop = req.store.shop;
+    const accessToken = req.store.access_token;
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_auth: true });
+
+    const gqlQuery = `
+      query GetProducts($query: String, $cursor: String, $first: Int!) {
+        products(first: $first, query: $query, after: $cursor) {
+          edges {
+            cursor
+            node {
+              id
+              title
+              handle
+              vendor
+              productType
+              tags
+              featuredImage { url altText }
+              images(first: 5) { edges { node { url altText } } }
+              variants(first: 50) {
+                edges {
+                  node {
+                    id
+                    title
+                    price { amount }
+                    compareAtPrice { amount }
+                    inventoryQuantity
+                    image { url }
+                    sku
+                    selectedOptions { name value }
+                  }
+                }
+              }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    `;
+
+    const variables = { query, cursor, first: Math.min(parseInt(limit), 50) };
+    const response = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: gqlQuery, variables }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: 'Shopify API error: ' + err });
+    }
+
+    const data = await response.json();
+    if (data.errors) {
+      return res.status(400).json({ error: 'GraphQL error: ' + JSON.stringify(data.errors) });
+    }
+
+    const { products, pageInfo } = data.data.products;
+    const mapped = products.edges.map(({ cursor, node }) => ({
+      cursor,
+      id: node.id,
+      title: node.title,
+      handle: node.handle,
+      vendor: node.vendor,
+      product_type: node.productType,
+      tags: node.tags,
+      image: node.featuredImage?.url || node.images?.edges?.[0]?.node?.url || null,
+      images: node.images?.edges?.map(e => ({ url: e.node.url, altText: e.node.altText })) || [],
+      variants: node.variants.edges.map(e => ({
+        id: e.node.id,
+        title: e.node.title,
+        price: e.node.price?.amount || '0',
+        compare_at_price: e.node.compareAtPrice?.amount || null,
+        inventory_quantity: e.node.inventoryQuantity ?? null,
+        image: e.node.image?.url || null,
+        sku: e.node.sku || '',
+        selected_options: e.node.selectedOptions || [],
+      })),
+    }));
+
+    res.json({ products: mapped, pageInfo });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET /api/shopify/collections ─────────────────────────────────────────────
 // Get all custom collections from the merchant's Shopify store
 router.get('/collections', verifyShop, async (req, res) => {
@@ -125,6 +218,46 @@ router.get('/product-tags', verifyShop, async (req, res) => {
 
     const tags = Array.from(tagSet).sort();
     res.json({ tags });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── GET /api/shopify/price-rules ──────────────────────────────────────────────
+// Get price rules (discount codes) from Shopify
+router.get('/price-rules', verifyShop, async (req, res) => {
+  try {
+    const shop = req.store.shop;
+    const accessToken = req.store.access_token;
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_auth: true });
+
+    const response = await fetch(
+      `https://${shop}/admin/api/2024-01/price_rules.json?limit=250`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: 'Shopify API error: ' + err });
+    }
+
+    const data = await response.json();
+    const rules = (data.price_rules || []).map(r => ({
+      id: r.id,
+      title: r.title,
+      value: r.value,
+      value_type: r.value_type, // 'percentage' | 'fixed_amount' | 'free_shipping'
+      target_type: r.target_type, // 'line_item' | 'shipping_line'
+      starts_at: r.starts_at,
+      ends_at: r.ends_at,
+    }));
+
+    res.json({ price_rules: rules });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

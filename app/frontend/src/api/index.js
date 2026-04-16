@@ -178,4 +178,14 @@ export const api = {
 
   // GET /api/shopify/product-tags
   getShopifyProductTags: () => apiFetch('/api/shopify/product-tags'),
+
+  // GET /api/shopify/products — paginated rich product search
+  getShopifyProducts: (query = '', cursor = null, limit = 25) => {
+    let url = `/api/shopify/products?query=${encodeURIComponent(query)}&limit=${limit}`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    return apiFetch(url);
+  },
+
+  // GET /api/shopify/price-rules — discount codes
+  getShopifyPriceRules: () => apiFetch('/api/shopify/price-rules'),
 };

@@ -1,1555 +1,845 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { api } from '../api/index.js';
+import ProductPicker from '../components/ProductPicker.jsx';
+import CollectionPicker from '../components/CollectionPicker.jsx';
+import DiscountCodePicker from '../components/DiscountCodePicker.jsx';
+import OfferPageRenderer from '../components/shared/OfferPageRenderer.jsx';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function generateId() {
-  return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-function makeNode(overrides = {}) {
-  return {
-    id: generateId(),
-    type: 'single_product',
-    product: null,
-    discount: { type: 'percentage', value: 0 },
-    quantity: 1,
-    headline: 'Wait! Add this to your order',
-    message: 'Get it delivered with your current order — just one click away.',
-    accept_button_text: 'Yes, add to my order',
-    decline_button_text: 'No thanks',
-    countdown_timer: { enabled: false, duration_seconds: 900 },
-    on_accept_node_id: null,
-    on_decline_node_id: null,
-    position: { x: 100, y: 100 },
-    ...overrides,
-  };
-}
-
-const TYPE_LABELS = {
-  single_product: 'Single Product',
-  bundle: 'Bundle',
-  quantity_upgrade: 'Quantity Upgrade',
-  subscription_upgrade: 'Subscription',
-};
-
-function getDiscountLabel(discount) {
-  if (!discount || discount.value <= 0) return null;
-  if (discount.type === 'percentage') return `${discount.value}% off`;
-  if (discount.type === 'fixed_amount') return `$${discount.value} off`;
-  if (discount.type === 'fixed_price') return `$${discount.value}`;
-  return null;
-}
-
-// ── EdgeLine ─────────────────────────────────────────────────────────────────
-
-function EdgeLine({ edge, nodes }) {
-  const fromNode = edge.from;
-  const toNode = nodes.find(n => n.id === edge.toId);
-  if (!fromNode || !toNode) return null;
-
-  const sx = fromNode.position.x + (edge.type === 'accept' ? 186 : 14);
-  const sy = fromNode.position.y + 110;
-  const tx = toNode.position.x + 100;
-  const ty = toNode.position.y;
-
-  const color = edge.type === 'accept' ? '#22c55e' : '#ef4444';
-  const midY = (sy + ty) / 2;
-  const path = `M ${sx} ${sy} C ${sx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`;
-
-  return (
-    <g>
-      <path d={path} stroke={color} strokeWidth="2" fill="none" strokeDasharray={edge.inProgress ? '6 4' : 'none'} />
-      <circle cx={tx} cy={ty} r="4" fill={color} />
-    </g>
-  );
-}
-
-// ── ConditionRow ──────────────────────────────────────────────────────────────
+// ── ConditionRow (Step 1) ─────────────────────────────────────────────────────
 
 const CONDITION_TYPES = [
-  { value: 'cart_value_above', label: 'Cart value above $', fields: 'amount' },
-  { value: 'cart_value_below', label: 'Cart value below $', fields: 'amount' },
-  { value: 'cart_contains_product', label: 'Cart contains product(s)', fields: 'product_ids' },
-  { value: 'cart_contains_collection', label: 'Cart contains collection(s)', fields: 'collection_ids' },
-  { value: 'discount_code_applied', label: 'Discount code applied', fields: 'codes' },
-  { value: 'customer_tag', label: 'Customer has tag(s)', fields: 'tags' },
-  { value: 'customer_order_count', label: 'Customer order count', fields: 'operator+value' },
-  { value: 'shipping_country', label: 'Shipping country is', fields: 'countries' },
+  { value: 'order_total', label: 'Order total', operators: ['greater_than', 'less_than', 'equals'] },
+  { value: 'item_count', label: 'Item count', operators: ['greater_than', 'less_than', 'equals'] },
+  { value: 'discount_code', label: 'Discount code', operators: ['equals', 'contains'] },
+  { value: 'customer_tag', label: 'Customer tag', operators: ['equals', 'contains'] },
+  { value: 'customer_order_count', label: 'Customer order count', operators: ['equals', 'greater_than', 'less_than'] },
+  { value: 'shipping_country', label: 'Shipping country', operators: ['equals'] },
 ];
 
-function ConditionRow({ condition, onChange, onRemove }) {
+function ConditionRow({ condition, onChange, onRemove, onOpenDiscountPicker }) {
   const typeDef = CONDITION_TYPES.find(t => t.value === condition.type) || CONDITION_TYPES[0];
 
   return (
-    <div className="condition-row">
-      <select value={condition.type} onChange={e => onChange({ ...condition, type: e.target.value })}>
+    <div className="cond-row">
+      <select value={condition.type} onChange={e => onChange({ ...condition, type: e.target.value, operator: typeDef.operators[0] })}>
         {CONDITION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
-      {typeDef.fields === 'amount' && (
-        <input type="number" placeholder="$" value={condition.amount ?? ''}
-          onChange={e => onChange({ ...condition, amount: parseFloat(e.target.value) || 0 })} />
+      <select value={condition.operator} onChange={e => onChange({ ...condition, operator: e.target.value })}>
+        {typeDef.operators.map(op => <option key={op} value={op}>{op.replace('_', ' ')}</option>)}
+      </select>
+      {condition.type === 'discount_code' ? (
+        <button className="picker-btn-sm" onClick={onOpenDiscountPicker}>Pick codes</button>
+      ) : condition.type === 'customer_tag' ? (
+        <input type="text" placeholder="tag1, tag2" value={condition.value || ''}
+          onChange={e => onChange({ ...condition, value: e.target.value })} />
+      ) : condition.type === 'shipping_country' ? (
+        <input type="text" placeholder="US, CA, GB" value={condition.value || ''}
+          onChange={e => onChange({ ...condition, value: e.target.value })} />
+      ) : (
+        <input type="number" placeholder="0" value={condition.value || ''}
+          onChange={e => onChange({ ...condition, value: parseFloat(e.target.value) || 0 })} />
       )}
-      {typeDef.fields === 'codes' && (
-        <input type="text" placeholder="e.g. SAVE10, FREESHIP" value={condition.codes?.join(', ') || ''}
-          onChange={e => onChange({ ...condition, codes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
-      )}
-      {typeDef.fields === 'tags' && (
-        <input type="text" placeholder="e.g. VIP, wholesale" value={condition.tags?.join(', ') || ''}
-          onChange={e => onChange({ ...condition, tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
-      )}
-      {typeDef.fields === 'operator+value' && (
-        <>
-          <select value={condition.operator || 'gt'} onChange={e => onChange({ ...condition, operator: e.target.value })}>
-            <option value="eq">=</option>
-            <option value="gt">&gt;</option>
-            <option value="lt">&lt;</option>
-          </select>
-          <input type="number" value={condition.value ?? ''} placeholder="# orders"
-            onChange={e => onChange({ ...condition, value: parseInt(e.target.value) || 0 })} />
-        </>
-      )}
-      {typeDef.fields === 'product_ids' && (
-        <span className="condition-hint">{condition.product_ids?.length || 0} product(s) selected</span>
-      )}
-      {typeDef.fields === 'collection_ids' && (
-        <span className="condition-hint">{condition.collection_ids?.length || 0} collection(s) selected</span>
-      )}
-      {typeDef.fields === 'countries' && (
-        <span className="condition-hint">{condition.countries?.length || 0} country(ies) selected</span>
-      )}
-      <button className="condition-remove" onClick={onRemove}>×</button>
+      <button className="cond-remove" onClick={onRemove}>×</button>
     </div>
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Main Component ──────────────────────────────────────────────────────────
 
-export default function OfferBuilder({ store, appConfig }) {
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [funnel, setFunnel] = useState({
-    id: null,
-    name: 'Untitled Funnel',
-    status: 'draft',
-    trigger: { conditions: [], match: 'all' },
-    nodes: [],
-  });
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [wiringMode, setWiringMode] = useState(null); // { nodeId, edgeType }
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+export default function OfferBuilder({ funnel, onSave, onClose }) {
+  // ── State ────────────────────────────────────────────────────────────────
+  const [selectedNodeId, setSelectedNodeId] = useState(funnel.nodes[0]?.id || null);
+  const [activeStep, setActiveStep] = useState(1);
+  const [device, setDevice] = useState('desktop');
+  const [nodeStyle, setNodeStyle] = useState({});
 
-  // Dragging
-  const draggingRef = useRef(null); // { nodeId, startMouseX, startMouseY, startNodeX, startNodeY }
+  // Trigger state (derived from funnel trigger + node conditions)
+  const [triggerType, setTriggerType] = useState('any');
+  const [selectedTriggerProducts, setSelectedTriggerProducts] = useState([]);
+  const [selectedCollections, setSelectedCollections] = useState([]);
+  const [andConditions, setAndConditions] = useState([]);
+  const [upsellType, setUpsellType] = useState('post_purchase');
 
-  // Product picker
-  const [showProductPicker, setShowProductPicker] = useState(false);
-  const [ppSearch, setPpSearch] = useState('');
-  const [ppResults, setPpResults] = useState([]);
-  const [ppLoading, setPpLoading] = useState(false);
-  const ppSearchRef = useRef(null);
+  // Picker modals
+  const [showProductPicker, setShowProductPicker] = useState(null);
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false);
+  const [showDiscountPicker, setShowDiscountPicker] = useState(false);
 
-  // Preview
-  const [showPreview, setShowPreview] = useState(false);
-
-  // ── Derived ─────────────────────────────────────────────────────────────────
-
+  // ── Derived ──────────────────────────────────────────────────────────────
   const selectedNode = funnel.nodes.find(n => n.id === selectedNodeId) || null;
 
-  const edges = [];
-  funnel.nodes.forEach(node => {
-    if (node.on_accept_node_id) {
-      edges.push({ id: `${node.id}-accept`, from: node, toId: node.on_accept_node_id, type: 'accept' });
-    }
-    if (node.on_decline_node_id) {
-      edges.push({ id: `${node.id}-decline`, from: node, toId: node.on_decline_node_id, type: 'decline' });
-    }
-  });
+  // Sync funnel trigger state into local state when node changes
+  // (we keep local state for the wizard; funnel is the source of truth for the tree)
+  // Actually, the funnel.nodes hold all node data — we use local UI state for
+  // the wizard steppers and sync back via updateNode / onSave.
 
-  // Wiring preview edge
-  let wiringPreview = null;
-  if (wiringMode) {
-    const fromNode = funnel.nodes.find(n => n.id === wiringMode.nodeId);
-    if (fromNode) {
-      wiringPreview = {
-        id: 'wiring-preview',
-        from: fromNode,
-        edgeType: wiringMode.edgeType,
-      };
-    }
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  function addNode() {
-    const newNode = makeNode({
-      position: {
-        x: 100 + funnel.nodes.length * 30,
-        y: 100 + funnel.nodes.length * 20,
-      },
-    });
-    setFunnel(f => ({ ...f, nodes: [...f.nodes, newNode] }));
-    setSelectedNodeId(newNode.id);
-  }
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   function updateNode(nodeId, updates) {
-    setFunnel(f => ({
-      ...f,
-      nodes: f.nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n),
-    }));
+    const updated = funnel.nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n);
+    onSave({ ...funnel, nodes: updated });
   }
 
-  function updateNodePosition(nodeId, pos) {
-    updateNode(nodeId, { position: pos });
+  function updateStyle(updates) {
+    setNodeStyle(prev => ({ ...prev, ...updates }));
+  }
+
+  function addNode() {
+    if (funnel.nodes.length >= 6) return;
+    const idx = funnel.nodes.length + 1;
+    const newNode = {
+      id: 'node_' + Date.now(),
+      type: 'single_product',
+      product: null,
+      discount: { type: 'percentage', value: 0 },
+      quantity: 1,
+      headline: 'Add another item to your order',
+      message: '',
+      accept_button_text: 'Add to order',
+      decline_button_text: 'No thanks',
+      countdown_timer: { enabled: false, duration_seconds: 900, message: '' },
+      on_accept_node_id: null,
+      on_decline_node_id: null,
+      position: { x: 0, y: 0 },
+    };
+    onSave({ ...funnel, nodes: [...funnel.nodes, newNode] });
+    setSelectedNodeId(newNode.id);
+    setActiveStep(1);
+    setNodeStyle({});
   }
 
   function removeNode(nodeId) {
-    setFunnel(f => ({
-      ...f,
-      nodes: f.nodes.filter(n => n.id !== nodeId),
-    }));
-    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    if (funnel.nodes.length <= 1) return;
+    const newNodes = funnel.nodes.filter(n => n.id !== nodeId);
+    onSave({ ...funnel, nodes: newNodes });
+    setSelectedNodeId(newNodes[0]?.id || null);
   }
 
-  function handleWire(fromNodeId, edgeType, toNodeId) {
-    const key = edgeType === 'accept' ? 'on_accept_node_id' : 'on_decline_node_id';
-    updateNode(fromNodeId, { [key]: toNodeId });
-    setWiringMode(null);
+  function addAndCondition() {
+    setAndConditions(prev => [...prev, { type: 'order_total', operator: 'greater_than', value: 50 }]);
   }
 
-  function updateTrigger(updater) {
-    setFunnel(f => ({
-      ...f,
-      trigger: typeof updater === 'function' ? updater(f.trigger) : updater,
-    }));
+  function updateAndCondition(index, updated) {
+    setAndConditions(prev => prev.map((c, i) => i === index ? updated : c));
   }
 
-  function addCondition() {
-    updateTrigger(t => ({
-      ...t,
-      conditions: [...t.conditions, { type: 'cart_value_above', amount: 0 }],
-    }));
+  function removeAndCondition(index) {
+    setAndConditions(prev => prev.filter((_, i) => i !== index));
   }
 
-  function updateCondition(index, updated) {
-    updateTrigger(t => ({
-      ...t,
-      conditions: t.conditions.map((c, i) => i === index ? updated : c),
-    }));
+  // ── Picker handlers ───────────────────────────────────────────────────────
+
+  function handleProductSelect({ product, variant }) {
+    if (showProductPicker === 'trigger') {
+      setSelectedTriggerProducts(prev => {
+        const exists = prev.find(p => p.id === product.id);
+        return exists ? prev.filter(p => p.id !== product.id) : [...prev, product];
+      });
+      setShowProductPicker(null);
+      return;
+    }
+    if (showProductPicker === 'offer') {
+      updateNode(selectedNodeId, {
+        product: {
+          product_id: String(product.id),
+          variant_id: String(variant.id),
+          title: product.title,
+          variant_title: variant.title,
+          original_price: variant.price,
+          image_url: variant.image || product.image,
+          images: product.images,
+          description: product.description || '',
+        }
+      });
+      setShowProductPicker(null);
+      return;
+    }
+    setShowProductPicker(null);
   }
 
-  function removeCondition(index) {
-    updateTrigger(t => ({
-      ...t,
-      conditions: t.conditions.filter((_, i) => i !== index),
-    }));
+  function handleCollectionSelect(collections) {
+    setSelectedCollections(collections);
+    setShowCollectionPicker(false);
   }
 
-  // ── Dragging ────────────────────────────────────────────────────────────────
-
-  function startDrag(e, nodeId) {
-    e.stopPropagation();
-    const node = funnel.nodes.find(n => n.id === nodeId);
-    if (!node) return;
-    draggingRef.current = {
-      nodeId,
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      startNodeX: node.position.x,
-      startNodeY: node.position.y,
-    };
-  }
-
-  function handleCanvasMouseMove(e) {
-    // Update cursor position for wiring preview
-    const rect = e.currentTarget.getBoundingClientRect();
-    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-
-    if (!draggingRef.current) return;
-    const { nodeId, startMouseX, startMouseY, startNodeX, startNodeY } = draggingRef.current;
-    const dx = e.clientX - startMouseX;
-    const dy = e.clientY - startMouseY;
-    updateNodePosition(nodeId, {
-      x: Math.max(0, startNodeX + dx),
-      y: Math.max(0, startNodeY + dy),
+  function handleDiscountSelect(codes) {
+    setAndConditions(prev => {
+      const filtered = prev.filter(c => c.type !== 'discount_code');
+      return [...filtered, ...codes.map(code => ({ type: 'discount_code', operator: 'contains', value: code.title }))];
     });
+    setShowDiscountPicker(false);
   }
 
-  function handleCanvasMouseUp() {
-    draggingRef.current = null;
+  function removeTriggerProduct(id) {
+    setSelectedTriggerProducts(prev => prev.filter(p => p.id !== id));
   }
 
-  // ── Node wiring click ───────────────────────────────────────────────────────
-
-  function handleNodeClick(nodeId) {
-    if (wiringMode) {
-      // Complete the wiring
-      if (wiringMode.nodeId !== nodeId) {
-        handleWire(wiringMode.nodeId, wiringMode.edgeType, nodeId);
-      } else {
-        setWiringMode(null);
-      }
-    } else {
-      setSelectedNodeId(nodeId);
-    }
+  function removeCollection(id) {
+    setSelectedCollections(prev => prev.filter(c => c.id !== id));
   }
 
-  // ── Product picker ──────────────────────────────────────────────────────────
+  // ── Step labels ───────────────────────────────────────────────────────────
 
-  function searchProducts(query) {
-    clearTimeout(ppSearchRef.current);
-    if (!query) { setPpResults([]); return; }
-    setPpLoading(true);
-    ppSearchRef.current = setTimeout(async () => {
-      try {
-        const res = await api.searchShopifyProducts(query, 20);
-        setPpResults(res.products || res || []);
-      } catch (e) {
-        setPpResults([]);
-      }
-      setPpLoading(false);
-    }, 300);
-  }
+  const STEP_LABELS = ['Triggers', 'Offer', 'Style'];
 
-  function handleSelectProduct(product) {
-    const variant = product.variants?.[0];
-    const variantId = variant?.id;
-    const variantTitle = variant?.title !== 'Default Title' ? variant?.title : '';
-    updateNode(selectedNodeId, {
-      product: {
-        product_id: String(product.id),
-        variant_id: String(variantId || ''),
-        title: product.title,
-        image_url: product.image || product.images?.[0]?.src || '',
-        original_price: variant?.price || '',
-        variant_title: variantTitle || '',
-      },
-    });
-    setShowProductPicker(false);
-    setPpSearch('');
-    setPpResults([]);
-  }
+  // ── Render Step 1 ─────────────────────────────────────────────────────────
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
-
-  async function saveFunnel() {
-    try {
-      const payload = { name: funnel.name, trigger: funnel.trigger, nodes: funnel.nodes };
-      if (funnel.id) {
-        await api.put(`/api/funnels/${funnel.id}`, payload);
-      } else {
-        const res = await api.post('/api/funnels', payload);
-        setFunnel(f => ({ ...f, id: res.funnel?.id }));
-      }
-    } catch (e) {
-      console.warn('Backend API not yet connected — funnel saved locally only');
-    }
-  }
-
-  function openPreview() {
-    setShowPreview(true);
-  }
-
-  // ── Render wiring preview line ──────────────────────────────────────────────
-
-  function getWiringLine() {
-    if (!wiringMode || !wiringPreview) return null;
-    const fromNode = wiringPreview.from;
-    const sx = fromNode.position.x + (wiringMode.edgeType === 'accept' ? 186 : 14);
-    const sy = fromNode.position.y + 110;
-    const tx = cursorPos.x;
-    const ty = cursorPos.y;
-    return { sx, sy, tx, ty };
-  }
-
-  const wiringLine = getWiringLine();
-
-  // ── Preview Modal ───────────────────────────────────────────────────────────
-
-  function renderPreview() {
-    if (!showPreview || !selectedNode) return null;
-    const node = selectedNode;
-    let discountedPrice = null;
-    if (node.product?.original_price && node.discount?.value > 0) {
-      const orig = parseFloat(node.product.original_price);
-      if (node.discount.type === 'percentage') {
-        discountedPrice = orig * (1 - node.discount.value / 100);
-      } else if (node.discount.type === 'fixed_amount') {
-        discountedPrice = orig - node.discount.value;
-      } else if (node.discount.type === 'fixed_price') {
-        discountedPrice = node.discount.value;
-      }
-    }
-
+  function renderStep1() {
+    if (!selectedNode) return null;
     return (
-      <div className="preview-modal-overlay" onClick={() => setShowPreview(false)}>
-        <div className="preview-modal" onClick={e => e.stopPropagation()}>
-          <div className="preview-header">
-            <span className="preview-badge">ONE-TIME OFFER</span>
-            <button className="preview-close" onClick={() => setShowPreview(false)}>×</button>
+      <div className="wizard-step-content">
+        {/* Offer name */}
+        <div className="field-group">
+          <label>Offer name (internal)</label>
+          <input type="text" placeholder="Offer #1" value={selectedNode.headline}
+            onChange={e => updateNode(selectedNodeId, { headline: e.target.value })} />
+        </div>
+
+        {/* Upsell type */}
+        <div className="field-group">
+          <label>Upsell Type</label>
+          <div className="radio-group">
+            <label className="radio-option">
+              <input type="radio" name="upsellType" value="post_purchase"
+                checked={upsellType === 'post_purchase'}
+                onChange={() => setUpsellType('post_purchase')} />
+              <span>Post Purchase Upsell</span>
+            </label>
+            <label className="radio-option disabled">
+              <input type="radio" name="upsellType" value="thank_you" disabled />
+              <span>Thank You Page Upsell</span>
+              <span className="coming-soon">Coming soon</span>
+            </label>
           </div>
-          {node.product?.image_url && (
-            <img src={node.product.image_url} className="preview-product-image" alt="" />
-          )}
-          <div className="preview-body">
-            <h2 className="preview-headline">{node.headline}</h2>
-            <p className="preview-message">{node.message}</p>
-            {node.product?.variant_title && (
-              <p className="preview-variant">{node.product.variant_title}</p>
-            )}
-            <div className="preview-price-block">
-              {node.product?.original_price && (
-                <>
-                  <span className="preview-original-price">${node.product.original_price}</span>
-                  {discountedPrice !== null && (
-                    <>
-                      <span className="preview-discounted-price">${discountedPrice.toFixed(2)}</span>
-                      {node.discount.type === 'percentage' && (
-                        <span className="preview-savings">You save {node.discount.value}%</span>
-                      )}
-                    </>
-                  )}
-                </>
+        </div>
+
+        {/* Show upsell when */}
+        <div className="field-group">
+          <label>Show upsell when customer orders</label>
+          <div className="radio-group">
+            <label className="radio-option">
+              <input type="radio" name="triggerType" value="any"
+                checked={triggerType === 'any'}
+                onChange={() => setTriggerType('any')} />
+              <span>Any product</span>
+            </label>
+            <label className="radio-option">
+              <input type="radio" name="triggerType" value="any_except"
+                checked={triggerType === 'any_except'}
+                onChange={() => setTriggerType('any_except')} />
+              <span>Any product except selected</span>
+            </label>
+            <label className="radio-option">
+              <input type="radio" name="triggerType" value="specific"
+                checked={triggerType === 'specific'}
+                onChange={() => setTriggerType('specific')} />
+              <span>Specific selected products</span>
+            </label>
+            <label className="radio-option">
+              <input type="radio" name="triggerType" value="collection"
+                checked={triggerType === 'collection'}
+                onChange={() => setTriggerType('collection')} />
+              <span>Products in selected collections</span>
+            </label>
+          </div>
+
+          {/* Product multi-select */}
+          {(triggerType === 'any_except' || triggerType === 'specific') && (
+            <div className="inline-picker">
+              <button className="picker-btn" onClick={() => setShowProductPicker('trigger')}>
+                {selectedTriggerProducts.length === 0 ? '+ Select products' : `${selectedTriggerProducts.length} product(s) selected`}
+              </button>
+              {selectedTriggerProducts.length > 0 && (
+                <div className="selected-tags">
+                  {selectedTriggerProducts.map(p => (
+                    <span key={p.id} className="tag">
+                      {p.title}
+                      <button onClick={() => removeTriggerProduct(p.id)}>×</button>
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
-            <button className="preview-accept-btn">
-              {node.accept_button_text || 'Yes, add to my order'}
-              {discountedPrice !== null && ` — $${discountedPrice.toFixed(2)}`}
-            </button>
-            <button className="preview-decline-btn">{node.decline_button_text || 'No thanks'}</button>
+          )}
+
+          {/* Collection multi-select */}
+          {triggerType === 'collection' && (
+            <div className="inline-picker">
+              <button className="picker-btn" onClick={() => setShowCollectionPicker(true)}>
+                {selectedCollections.length === 0 ? '+ Select collections' : `${selectedCollections.length} collection(s) selected`}
+              </button>
+              {selectedCollections.length > 0 && (
+                <div className="selected-tags">
+                  {selectedCollections.map(c => (
+                    <span key={c.id} className="tag">
+                      {c.title}
+                      <button onClick={() => removeCollection(c.id)}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* AND conditions */}
+        <div className="field-group">
+          <div className="condition-card">
+            <div className="condition-card-header">
+              <span className="condition-card-title">AND</span>
+              <span className="condition-card-hint">Additional conditions when this deal will be triggered (e.g. order total is higher than $50)</span>
+            </div>
+            {andConditions.map((c, i) => (
+              <ConditionRow
+                key={i}
+                condition={c}
+                onChange={updated => updateAndCondition(i, updated)}
+                onRemove={() => removeAndCondition(i)}
+                onOpenDiscountPicker={() => setShowDiscountPicker(true)}
+              />
+            ))}
+            <button className="add-condition-btn" onClick={addAndCondition}>+ Add condition</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render Step 2 ─────────────────────────────────────────────────────────
 
-  return (
-    <div className="offer-builder-root">
-      {/* Top bar */}
-      <div className="funnel-topbar">
-        <input
-          className="funnel-name-input"
-          value={funnel.name}
-          onChange={e => setFunnel(f => ({ ...f, name: e.target.value }))}
-        />
-        <span className={`status-badge ${funnel.status}`}>{funnel.status}</span>
-        <span className="node-count">{funnel.nodes.length} node{funnel.nodes.length !== 1 ? 's' : ''}</span>
-        <button className="btn-secondary" onClick={saveFunnel}>Save</button>
-        <button className="btn-primary" onClick={openPreview} disabled={!selectedNode}>Preview</button>
-      </div>
+  function renderStep2() {
+    if (!selectedNode) return null;
+    const node = selectedNode;
 
-      {/* Two-pane layout */}
-      <div className="funnel-body">
-        {/* Left pane */}
-        <div className="left-pane">
-          {/* Trigger editor */}
-          <div className="trigger-editor">
-            <div className="trigger-header">
-              <span className="trigger-title">Trigger</span>
-              <span className="trigger-sub">When does this funnel activate?</span>
-            </div>
-            <div className="match-toggle">
-              <span className="match-label">Match:</span>
-              <button
-                className={funnel.trigger.match === 'all' ? 'active' : ''}
-                onClick={() => updateTrigger(t => ({ ...t, match: 'all' }))}
-              >ALL</button>
-              <button
-                className={funnel.trigger.match === 'any' ? 'active' : ''}
-                onClick={() => updateTrigger(t => ({ ...t, match: 'any' }))}
-              >ANY</button>
-            </div>
-            {funnel.trigger.conditions.map((c, i) => (
-              <ConditionRow
-                key={i}
-                condition={c}
-                onChange={c2 => updateCondition(i, c2)}
-                onRemove={() => removeCondition(i)}
+    return (
+      <div className="wizard-step-content">
+        {/* Product */}
+        <div className="field-group">
+          <label>Product to offer *</label>
+          {node.product?.product_id ? (
+            <div className="selected-product-row">
+              <img
+                src={node.product.image_url || node.product.images?.[0]?.url || ''}
+                className="sp-thumb"
+                alt=""
               />
-            ))}
-            <button className="add-condition-btn" onClick={addCondition}>+ Add Condition</button>
-          </div>
-
-          {/* Node graph canvas */}
-          <div
-            className="node-graph-canvas"
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUp}
-            onClick={e => {
-              if (e.target === e.currentTarget) {
-                setSelectedNodeId(null);
-                setWiringMode(null);
-              }
-            }}
-          >
-            {/* SVG edges */}
-            <svg className="edges-svg">
-              {edges.map(edge => (
-                <EdgeLine key={edge.id} edge={edge} nodes={funnel.nodes} />
-              ))}
-              {/* Wiring preview */}
-              {wiringLine && (
-                <line
-                  x1={wiringLine.sx}
-                  y1={wiringLine.sy}
-                  x2={wiringLine.tx}
-                  y2={wiringLine.ty}
-                  stroke="#a78bfa"
-                  strokeWidth="2"
-                  strokeDasharray="6 4"
-                />
-              )}
-            </svg>
-
-            {/* Thank You terminal */}
-            <div className="thank-you-node">
-              <div className="thank-you-card">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" width="20" height="20">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <span>Thank You</span>
+              <div className="sp-info">
+                <div className="sp-title">{node.product.title}</div>
+                <div className="sp-variant">{node.product.variant_title || 'Default variant'}</div>
               </div>
+              <button className="sp-change" onClick={() => setShowProductPicker('offer')}>Change</button>
             </div>
+          ) : (
+            <button className="select-product-btn" onClick={() => setShowProductPicker('offer')}>
+              + Select product
+            </button>
+          )}
+        </div>
 
-            {/* Node cards */}
-            {funnel.nodes.map(node => (
-              <div
-                key={node.id}
-                className={`funnel-node-card ${selectedNodeId === node.id ? 'selected' : ''} ${wiringMode?.nodeId === node.id ? 'wiring-source' : ''}`}
-                style={{ position: 'absolute', left: node.position.x, top: node.position.y }}
-                onMouseDown={e => startDrag(e, node.id)}
-                onClick={e => { e.stopPropagation(); handleNodeClick(node.id); }}
-              >
-                <div className="node-type-badge">{TYPE_LABELS[node.type] || node.type}</div>
-                {node.product?.image_url && (
-                  <img src={node.product.image_url} className="node-thumb" alt="" />
-                )}
-                <div className="node-headline">{node.headline}</div>
-                {node.discount?.value > 0 && (
-                  <span className="discount-badge">{getDiscountLabel(node.discount)}</span>
-                )}
-                <div className="node-ports">
-                  <button
-                    className="port port-accept"
-                    onClick={e => { e.stopPropagation(); setWiringMode({ nodeId: node.id, edgeType: 'accept' }); }}
-                    title="Accept →"
-                  >✓</button>
-                  <button
-                    className="port port-decline"
-                    onClick={e => { e.stopPropagation(); setWiringMode({ nodeId: node.id, edgeType: 'decline' }); }}
-                    title="Decline →"
-                  >✗</button>
-                  <button
-                    className="port port-delete"
-                    onClick={e => { e.stopPropagation(); removeNode(node.id); }}
-                    title="Delete node"
-                  >🗑</button>
-                </div>
-              </div>
-            ))}
+        {/* Variant */}
+        {node.product?.product_id && (
+          <div className="field-group">
+            <label>Variant *</label>
+            <div className="variant-grid">
+              {(node.product.variants || []).map(v => (
+                <button
+                  key={v.id}
+                  className={`variant-btn ${String(node.product.variant_id) === String(v.id) ? 'selected' : ''}`}
+                  onClick={() => updateNode(node.id, {
+                    product: {
+                      ...node.product,
+                      variant_id: String(v.id),
+                      variant_title: v.title,
+                      original_price: v.price,
+                      image_url: v.image || node.product.image_url,
+                    }
+                  })}
+                >
+                  <div className="vb-title">{v.title}</div>
+                  <div className="vb-price">${parseFloat(v.price || 0).toFixed(2)}</div>
+                  {v.inventory_quantity === 0 && <span className="vb-oos">Out of stock</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-            {/* Empty state */}
-            {funnel.nodes.length === 0 && (
-              <div className="canvas-empty-state">
-                <p>Add your first offer node to get started</p>
-              </div>
-            )}
-
-            {/* Add node button */}
-            <button className="add-node-btn" onClick={addNode}>+ Add Offer</button>
+        {/* Quantity */}
+        <div className="field-group">
+          <label>Quantity</label>
+          <div className="qty-control">
+            <button onClick={() => updateNode(node.id, { quantity: Math.max(1, node.quantity - 1) })}>−</button>
+            <input type="number" min="1" max="10"
+              value={node.quantity}
+              onChange={e => updateNode(node.id, { quantity: Math.min(10, parseInt(e.target.value) || 1) })} />
+            <button onClick={() => updateNode(node.id, { quantity: Math.min(10, node.quantity + 1) })}>+</button>
           </div>
         </div>
 
-        {/* Right pane */}
-        <div className="offer-editor-panel">
-          {selectedNode ? (
-            <>
-              <div className="editor-header">
-                <span>Edit Offer</span>
-                <button onClick={() => setSelectedNodeId(null)}>×</button>
-              </div>
-              <div className="editor-sections">
-                {/* Type selector */}
-                <div className="editor-section">
-                  <div className="section-label">Offer Type</div>
-                  <div className="type-selector">
-                    {Object.entries(TYPE_LABELS).map(([t, label]) => (
-                      <button
-                        key={t}
-                        className={selectedNode.type === t ? 'active' : ''}
-                        onClick={() => updateNode(selectedNodeId, { type: t })}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Product */}
-                <div className="editor-section">
-                  <div className="section-label">Product</div>
-                  {selectedNode.product ? (
-                    <div className="selected-product">
-                      <img src={selectedNode.product.image_url} alt="" />
-                      <div className="selected-product-info">
-                        <div className="selected-product-title">{selectedNode.product.title}</div>
-                        {selectedNode.product.variant_title && (
-                          <div className="selected-product-variant">{selectedNode.product.variant_title}</div>
-                        )}
-                        <div className="selected-product-price">${selectedNode.product.original_price}</div>
-                      </div>
-                      <button onClick={() => updateNode(selectedNodeId, { product: null })}>×</button>
-                    </div>
-                  ) : (
-                    <button className="select-product-btn" onClick={() => setShowProductPicker(true)}>
-                      + Select Product
-                    </button>
-                  )}
-                </div>
-
-                {/* Quantity */}
-                <div className="editor-section">
-                  <div className="section-label">Quantity</div>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={selectedNode.quantity}
-                    onChange={e => updateNode(selectedNodeId, { quantity: parseInt(e.target.value) || 1 })}
-                  />
-                </div>
-
-                {/* Discount */}
-                <div className="editor-section">
-                  <div className="section-label">Discount</div>
-                  <div className="discount-type-btns">
-                    {[
-                      { t: 'percentage', label: '% Off' },
-                      { t: 'fixed_amount', label: '$ Off' },
-                      { t: 'fixed_price', label: 'Fixed Price' },
-                    ].map(({ t, label }) => (
-                      <button
-                        key={t}
-                        className={selectedNode.discount.type === t ? 'active' : ''}
-                        onClick={() => updateNode(selectedNodeId, { discount: { ...selectedNode.discount, type: t } })}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="number"
-                    value={selectedNode.discount.value}
-                    onChange={e => updateNode(selectedNodeId, { discount: { ...selectedNode.discount, value: parseFloat(e.target.value) || 0 } })}
-                  />
-                </div>
-
-                {/* Copy */}
-                <div className="editor-section">
-                  <div className="section-label">Copy</div>
-                  <label>Headline</label>
-                  <input
-                    type="text"
-                    value={selectedNode.headline}
-                    onChange={e => updateNode(selectedNodeId, { headline: e.target.value })}
-                    maxLength={80}
-                  />
-                  <label>Message</label>
-                  <textarea
-                    value={selectedNode.message}
-                    onChange={e => updateNode(selectedNodeId, { message: e.target.value })}
-                    maxLength={200}
-                  />
-                  <label>Accept button</label>
-                  <input
-                    type="text"
-                    value={selectedNode.accept_button_text}
-                    onChange={e => updateNode(selectedNodeId, { accept_button_text: e.target.value })}
-                  />
-                  <label>Decline button</label>
-                  <input
-                    type="text"
-                    value={selectedNode.decline_button_text}
-                    onChange={e => updateNode(selectedNodeId, { decline_button_text: e.target.value })}
-                  />
-                </div>
-
-                {/* Urgency */}
-                <div className="editor-section">
-                  <div className="section-label">Urgency</div>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={selectedNode.countdown_timer?.enabled || false}
-                      onChange={e => updateNode(selectedNodeId, {
-                        countdown_timer: { ...selectedNode.countdown_timer, enabled: e.target.checked }
-                      })}
-                    />
-                    Show countdown timer
-                  </label>
-                  {selectedNode.countdown_timer?.enabled && (
-                    <div>
-                      <label>Duration (seconds)</label>
-                      <input
-                        type="number"
-                        value={selectedNode.countdown_timer.duration_seconds}
-                        onChange={e => updateNode(selectedNodeId, {
-                          countdown_timer: { ...selectedNode.countdown_timer, duration_seconds: parseInt(e.target.value) || 900 }
-                        })}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Wiring routing */}
-                <div className="editor-section">
-                  <div className="section-label">Routing</div>
-                  <div className="wire-row">
-                    <span className="wire-label accept">Accept →</span>
-                    <select
-                      value={selectedNode.on_accept_node_id || ''}
-                      onChange={e => updateNode(selectedNodeId, { on_accept_node_id: e.target.value || null })}
-                    >
-                      <option value="">Thank You</option>
-                      {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
-                        <option key={n.id} value={n.id}>{n.headline || 'Offer'}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="wire-row">
-                    <span className="wire-label decline">Decline →</span>
-                    <select
-                      value={selectedNode.on_decline_node_id || ''}
-                      onChange={e => updateNode(selectedNodeId, { on_decline_node_id: e.target.value || null })}
-                    >
-                      <option value="">Thank You</option>
-                      {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
-                        <option key={n.id} value={n.id}>{n.headline || 'Offer'}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Delete node */}
-                <div className="editor-section">
-                  <button className="delete-node-btn" onClick={() => removeNode(selectedNodeId)}>
-                    Delete Node
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="editor-empty">
-              <p>Select a node to edit</p>
+        {/* Discount */}
+        <div className="field-group">
+          <label>Discount</label>
+          <div className="discount-type-row">
+            {['percentage', 'fixed_amount', 'fixed_price'].map(t => (
+              <button
+                key={t}
+                className={`discount-type-btn ${node.discount?.type === t ? 'active' : ''}`}
+                onClick={() => updateNode(node.id, { discount: { ...node.discount, type: t } })}
+              >
+                {t === 'percentage' ? '% Off' : t === 'fixed_amount' ? '$ Off' : 'Fixed Price'}
+              </button>
+            ))}
+          </div>
+          <div className="discount-value-row">
+            <span className="discount-prefix">
+              {node.discount?.type === 'percentage' ? '%' : '$'}
+            </span>
+            <input type="number" min="0"
+              value={node.discount?.value || 0}
+              onChange={e => updateNode(node.id, { discount: { ...node.discount, value: parseFloat(e.target.value) || 0 } })} />
+          </div>
+          {node.discount?.value > 0 && node.product?.original_price && (
+            <div className="discount-preview">
+              {(() => {
+                const orig = parseFloat(node.product.original_price);
+                const disc = node.discount.type === 'percentage'
+                  ? orig * (1 - node.discount.value / 100)
+                  : node.discount.type === 'fixed_amount'
+                  ? orig - node.discount.value
+                  : node.discount.value;
+                return <>Customer pays <strong>${disc.toFixed(2)}</strong> (was ${orig.toFixed(2)})</>;
+              })()}
             </div>
           )}
         </div>
+
+        {/* Copy */}
+        <div className="field-group">
+          <label>Headline</label>
+          <input type="text" value={node.headline || ''}
+            onChange={e => updateNode(node.id, { headline: e.target.value })}
+            placeholder="Add another item to your order" />
+        </div>
+        <div className="field-group">
+          <label>Description (optional)</label>
+          <textarea value={node.message || ''}
+            onChange={e => updateNode(node.id, { message: e.target.value })}
+            placeholder="Get it delivered with your current order — just one click away." />
+        </div>
+        <div className="field-group">
+          <label>Accept button text</label>
+          <input type="text" value={node.accept_button_text || ''}
+            onChange={e => updateNode(node.id, { accept_button_text: e.target.value })}
+            placeholder="Add to order" />
+        </div>
+        <div className="field-group">
+          <label>Decline link text</label>
+          <input type="text" value={node.decline_button_text || ''}
+            onChange={e => updateNode(node.id, { decline_button_text: e.target.value })}
+            placeholder="No thanks" />
+        </div>
+
+        {/* Countdown timer */}
+        <div className="field-group">
+          <label className="toggle-label">
+            <input type="checkbox"
+              checked={!!node.countdown_timer?.enabled}
+              onChange={e => updateNode(node.id, {
+                countdown_timer: {
+                  ...(node.countdown_timer || {}),
+                  enabled: e.target.checked,
+                  duration_seconds: node.countdown_timer?.duration_seconds || 900,
+                  message: node.countdown_timer?.message || '',
+                }
+              })} />
+            Show countdown timer
+          </label>
+          {node.countdown_timer?.enabled && (
+            <>
+              <div className="sub-field">
+                <label>Duration (minutes)</label>
+                <input type="number" min="1" max="60"
+                  value={(node.countdown_timer.duration_seconds || 900) / 60}
+                  onChange={e => updateNode(node.id, {
+                    countdown_timer: {
+                      ...node.countdown_timer,
+                      duration_seconds: (parseInt(e.target.value) || 15) * 60,
+                    }
+                  })} />
+              </div>
+              <div className="sub-field">
+                <label>Banner message</label>
+                <input type="text" value={node.countdown_timer.message || ''}
+                  onChange={e => updateNode(node.id, {
+                    countdown_timer: { ...node.countdown_timer, message: e.target.value }
+                  })} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render Step 3 ─────────────────────────────────────────────────────────
+
+  function renderStep3() {
+    return (
+      <div className="wizard-step-content">
+        <div className="field-group">
+          <label>Background color</label>
+          <div className="color-row">
+            <input type="color" value={nodeStyle.background_color || '#ffffff'}
+              onChange={e => updateStyle({ background_color: e.target.value })} />
+            <input type="text" value={nodeStyle.background_color || '#ffffff'}
+              onChange={e => updateStyle({ background_color: e.target.value })} />
+          </div>
+        </div>
+        <div className="field-group">
+          <label>Primary button color</label>
+          <div className="color-row">
+            <input type="color" value={nodeStyle.primary_color || '#8b5cf6'}
+              onChange={e => updateStyle({ primary_color: e.target.value })} />
+            <input type="text" value={nodeStyle.primary_color || '#8b5cf6'}
+              onChange={e => updateStyle({ primary_color: e.target.value })} />
+          </div>
+        </div>
+        <div className="field-group">
+          <label>Text color</label>
+          <div className="color-row">
+            <input type="color" value={nodeStyle.text_color || '#1a1a1a'}
+              onChange={e => updateStyle({ text_color: e.target.value })} />
+            <input type="text" value={nodeStyle.text_color || '#1a1a1a'}
+              onChange={e => updateStyle({ text_color: e.target.value })} />
+          </div>
+        </div>
+        <div className="field-group">
+          <label>Discount badge color</label>
+          <div className="color-row">
+            <input type="color" value={nodeStyle.badge_color || '#22c55e'}
+              onChange={e => updateStyle({ badge_color: e.target.value })} />
+            <input type="text" value={nodeStyle.badge_color || '#22c55e'}
+              onChange={e => updateStyle({ badge_color: e.target.value })} />
+          </div>
+        </div>
+        <div className="field-group">
+          <label>Font family</label>
+          <select value={nodeStyle.font_family || '-apple-system, sans-serif'}
+            onChange={e => updateStyle({ font_family: e.target.value })}>
+            <option value="-apple-system, BlinkMacSystemFont, sans-serif">System</option>
+            <option value="Inter, sans-serif">Inter</option>
+            <option value="Helvetica Neue, Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="Georgia, serif">Georgia</option>
+          </select>
+        </div>
+        <div className="field-group">
+          <label>Border radius: {nodeStyle.border_radius || 10}px</label>
+          <input type="range" min="0" max="24" value={nodeStyle.border_radius || 10}
+            onChange={e => updateStyle({ border_radius: parseInt(e.target.value) })}
+            className="range-input" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (!funnel.nodes || funnel.nodes.length === 0) {
+    return (
+      <div className="ob-wizard">
+        <div className="ob-empty-state">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#3f3f46" strokeWidth="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <h2>Create your first offer</h2>
+          <p>Add upsell and downsell nodes to build your funnel.</p>
+          <button className="ob-next" onClick={addNode}>+ Add Offer</button>
+        </div>
+        <style>{OB_CSS}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ob-wizard">
+      {/* Top tabs */}
+      <div className="ob-tabs">
+        {funnel.nodes.map((node, idx) => (
+          <button
+            key={node.id}
+            className={`ob-tab ${selectedNodeId === node.id ? 'active' : ''}`}
+            onClick={() => { setSelectedNodeId(node.id); setActiveStep(1); }}
+          >
+            <span className="ob-tab-num">{idx + 1}</span>
+            <span className="ob-tab-label">{node.headline || 'Untitled'}</span>
+            <span className="ob-tab-badge">{node.type === 'downsell' ? 'Downsell' : 'Upsell'}</span>
+            {funnel.nodes.length > 1 && (
+              <button className="ob-tab-close" onClick={e => { e.stopPropagation(); removeNode(node.id); }}>×</button>
+            )}
+          </button>
+        ))}
+        {funnel.nodes.length < 6 && (
+          <button className="ob-tab-add" onClick={addNode}>+</button>
+        )}
       </div>
 
-      {/* Product picker modal */}
-      {showProductPicker && (
-        <div className="product-picker-modal" onClick={() => setShowProductPicker(false)}>
-          <div className="product-picker-content" onClick={e => e.stopPropagation()}>
-            <div className="pp-header">
-              <span>Select Product</span>
-              <button onClick={() => setShowProductPicker(false)}>×</button>
-            </div>
-            <input
-              className="pp-search"
-              placeholder="Search products..."
-              value={ppSearch}
-              onChange={e => { setPpSearch(e.target.value); searchProducts(e.target.value); }}
-              autoFocus
-            />
-            {ppLoading && <div className="pp-loading">Searching...</div>}
-            <div className="pp-results">
-              {ppResults.map(p => (
-                <div key={p.id} className="pp-product" onClick={() => handleSelectProduct(p)}>
-                  <img
-                    src={p.image || p.images?.[0]?.src}
-                    className="pp-thumb"
-                    alt=""
-                  />
-                  <div className="pp-info">
-                    <div className="pp-name">{p.title}</div>
-                    <div className="pp-price">
-                      {p.variants?.[0]?.price ? `$${p.variants[0].price}` : '—'}
+      {/* Body */}
+      <div className="ob-body">
+        {/* Left config panel */}
+        <div className="ob-config">
+          {/* Step nav */}
+          <div className="ob-step-nav">
+            {STEP_LABELS.map((label, idx) => {
+              const stepNum = idx + 1;
+              const isDone = activeStep > stepNum;
+              const isActive = activeStep === stepNum;
+              return (
+                <React.Fragment key={stepNum}>
+                  {idx > 0 && <div className={`ob-step-line ${isDone ? 'done' : ''}`} />}
+                  <div
+                    className={`ob-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                    onClick={() => setActiveStep(stepNum)}
+                  >
+                    <div className="ob-step-num">
+                      {isDone ? '✓' : stepNum}
                     </div>
+                    <span>{label}</span>
                   </div>
-                </div>
-              ))}
-              {!ppLoading && ppResults.length === 0 && ppSearch && (
-                <div className="pp-empty">No products found for "{ppSearch}"</div>
-              )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Step content */}
+          <div className="ob-scroll-area">
+            {activeStep === 1 && renderStep1()}
+            {activeStep === 2 && renderStep2()}
+            {activeStep === 3 && renderStep3()}
+          </div>
+
+          {/* Navigation */}
+          <div className="ob-nav">
+            {activeStep > 1 ? (
+              <button className="ob-back" onClick={() => setActiveStep(s => s - 1)}>← Back</button>
+            ) : <div />}
+            {activeStep < 3 ? (
+              <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
+            ) : (
+              <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
+            )}
+          </div>
+        </div>
+
+        {/* Right preview panel */}
+        <div className="preview-panel">
+          <div className="preview-toolbar">
+            <span className="preview-label">Live Preview</span>
+            <div className="device-toggle">
+              <button className={device === 'desktop' ? 'active' : ''} onClick={() => setDevice('desktop')}>Desktop</button>
+              <button className={device === 'mobile' ? 'active' : ''} onClick={() => setDevice('mobile')}>Mobile</button>
+              <button className={device === 'full' ? 'active' : ''} onClick={() => setDevice('full')}>Full</button>
+            </div>
+          </div>
+          <div className="preview-area">
+            <div style={{
+              width: device === 'mobile' ? '375px' : device === 'full' ? '100%' : '600px',
+              transition: 'width 0.2s',
+              maxHeight: '800px',
+              overflowY: 'auto',
+            }}>
+              <OfferPageRenderer
+                node={selectedNode}
+                style={nodeStyle}
+                fullWidth={device === 'full'}
+              />
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Picker modals */}
+      {showProductPicker && (
+        <ProductPicker
+          isOpen={true}
+          onClose={() => setShowProductPicker(null)}
+          onSelect={handleProductSelect}
+          multiSelect={showProductPicker === 'trigger'}
+        />
       )}
 
-      {/* Preview modal */}
-      {renderPreview()}
+      {showCollectionPicker && (
+        <CollectionPicker
+          isOpen={true}
+          onClose={() => setShowCollectionPicker(false)}
+          onSelect={handleCollectionSelect}
+          selectedIds={selectedCollections.map(c => c.id)}
+        />
+      )}
 
-      <style>{`
-        /* ── Reset / base ─────────────────────────────────────────────────── */
-        .offer-builder-root {
-          display: flex;
-          flex-direction: column;
-          height: 100vh;
-          background: #0f0f14;
-          color: #fafafa;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          overflow: hidden;
-        }
+      {showDiscountPicker && (
+        <DiscountCodePicker
+          isOpen={true}
+          onClose={() => setShowDiscountPicker(false)}
+          onSelect={handleDiscountSelect}
+          selectedIds={[]}
+        />
+      )}
 
-        /* ── Top bar ──────────────────────────────────────────────────────── */
-        .funnel-topbar {
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          gap: 12px;
-          padding: 16px 20px;
-          border-bottom: 1px solid #27272a;
-          background: #0f0f14;
-          flex-shrink: 0;
-        }
-        .funnel-name-input {
-          background: transparent;
-          border: none;
-          color: #fafafa;
-          font-size: 18px;
-          font-weight: 700;
-          flex: 1;
-          outline: none;
-          padding: 4px 8px;
-          border-radius: 6px;
-        }
-        .funnel-name-input:hover,
-        .funnel-name-input:focus {
-          background: #18181b;
-        }
-        .status-badge {
-          font-size: 11px;
-          font-weight: 700;
-          text-transform: uppercase;
-          padding: 3px 10px;
-          border-radius: 20px;
-          letter-spacing: 0.5px;
-        }
-        .status-badge.draft { background: #3f3f46; color: #a1a1aa; }
-        .status-badge.active { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid #22c55e; }
-        .status-badge.archived { background: #27272a; color: #71717a; }
-        .node-count { color: #71717a; font-size: 13px; margin-left: auto; }
-        .btn-secondary {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #a1a1aa;
-          padding: 8px 16px;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-        .btn-secondary:hover { background: #3f3f46; color: #fafafa; }
-        .btn-primary {
-          background: #8b5cf6;
-          border: none;
-          color: #fff;
-          padding: 8px 20px;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-        .btn-primary:hover { background: #7c3aed; }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        /* ── Body ─────────────────────────────────────────────────────────── */
-        .funnel-body {
-          display: flex;
-          flex: 1;
-          overflow: hidden;
-        }
-        .left-pane {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          padding: 16px;
-          gap: 16px;
-          min-width: 0;
-        }
-
-        /* ── Trigger editor ────────────────────────────────────────────────── */
-        .trigger-editor {
-          background: #18181b;
-          border: 1px solid #27272a;
-          border-radius: 10px;
-          padding: 16px;
-          flex-shrink: 0;
-        }
-        .trigger-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        }
-        .trigger-title { font-size: 14px; font-weight: 700; color: #fafafa; }
-        .trigger-sub { font-size: 12px; color: #71717a; }
-        .match-toggle {
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 12px;
-        }
-        .match-label { font-size: 12px; color: #71717a; }
-        .match-toggle button {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #a1a1aa;
-          padding: 4px 12px;
-          border-radius: 6px;
-          font-size: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-        .match-toggle button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
-        .condition-row {
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          gap: 8px;
-          padding: 8px;
-          background: #0f0f14;
-          border-radius: 6px;
-          margin-bottom: 8px;
-        }
-        .condition-row select {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #fafafa;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 13px;
-          flex-shrink: 0;
-        }
-        .condition-row input {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #fafafa;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 13px;
-          width: 100px;
-        }
-        .condition-row input[type=text] { width: 160px; }
-        .condition-hint { font-size: 12px; color: #71717a; }
-        .condition-remove {
-          background: none;
-          border: none;
-          color: #71717a;
-          cursor: pointer;
-          font-size: 16px;
-          padding: 0 4px;
-          margin-left: auto;
-        }
-        .condition-remove:hover { color: #ef4444; }
-        .add-condition-btn {
-          border: 2px dashed #27272a;
-          background: none;
-          color: #71717a;
-          padding: 8px;
-          border-radius: 8px;
-          cursor: pointer;
-          width: 100%;
-          font-size: 13px;
-          font-weight: 600;
-          transition: all 0.15s;
-        }
-        .add-condition-btn:hover { border-color: #8b5cf6; color: #a78bfa; }
-
-        /* ── Node graph canvas ────────────────────────────────────────────── */
-        .node-graph-canvas {
-          flex: 1;
-          position: relative;
-          overflow: auto;
-          background: #0f0f14;
-          border-radius: 10px;
-          border: 1px solid #27272a;
-          min-height: 500px;
-        }
-        .edges-svg {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          overflow: visible;
-        }
-        .canvas-empty-state {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #71717a;
-          font-size: 15px;
-          pointer-events: none;
-        }
-
-        /* ── Node card ────────────────────────────────────────────────────── */
-        .funnel-node-card {
-          background: #18181b;
-          border: 2px solid #27272a;
-          border-radius: 12px;
-          padding: 16px;
-          width: 200px;
-          cursor: pointer;
-          transition: border-color 0.15s, box-shadow 0.15s;
-          user-select: none;
-        }
-        .funnel-node-card:hover { border-color: #3f3f46; }
-        .funnel-node-card.selected { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,0.2); }
-        .funnel-node-card.wiring-source { border-color: #a78bfa; }
-        .node-type-badge {
-          font-size: 10px;
-          font-weight: 700;
-          text-transform: uppercase;
-          color: #71717a;
-          margin-bottom: 8px;
-          letter-spacing: 0.5px;
-        }
-        .node-thumb {
-          width: 100%;
-          height: 80px;
-          object-fit: cover;
-          border-radius: 6px;
-          margin-bottom: 8px;
-          display: block;
-        }
-        .node-headline {
-          font-size: 13px;
-          font-weight: 600;
-          color: #fafafa;
-          margin-bottom: 6px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .discount-badge {
-          display: inline-block;
-          font-size: 11px;
-          font-weight: 700;
-          color: #22c55e;
-          background: rgba(34,197,94,0.1);
-          padding: 2px 8px;
-          border-radius: 4px;
-          margin-bottom: 4px;
-        }
-        .node-ports {
-          display: flex;
-          gap: 8px;
-          margin-top: 8px;
-        }
-        .port {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          border: 2px solid;
-          background: none;
-          cursor: pointer;
-          font-size: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.15s;
-        }
-        .port-accept { border-color: #22c55e; color: #22c55e; }
-        .port-accept:hover { background: #22c55e; color: #fff; }
-        .port-decline { border-color: #ef4444; color: #ef4444; }
-        .port-decline:hover { background: #ef4444; color: #fff; }
-        .port-delete { border-color: #3f3f46; color: #71717a; font-size: 10px; }
-        .port-delete:hover { background: #3f3f46; color: #fafafa; }
-
-        /* ── Thank you node ────────────────────────────────────────────────── */
-        .thank-you-node {
-          position: absolute;
-          bottom: 20px;
-          left: 50%;
-          transform: translateX(-50%);
-          pointer-events: none;
-        }
-        .thank-you-card {
-          background: rgba(34,197,94,0.1);
-          border: 2px solid #22c55e;
-          border-radius: 12px;
-          padding: 12px 24px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: #22c55e;
-          font-weight: 700;
-          font-size: 14px;
-        }
-
-        /* ── Add node button ───────────────────────────────────────────────── */
-        .add-node-btn {
-          position: absolute;
-          bottom: 20px;
-          right: 20px;
-          background: #8b5cf6;
-          color: #fff;
-          border: none;
-          border-radius: 10px;
-          padding: 12px 24px;
-          font-weight: 700;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background 0.15s;
-          box-shadow: 0 4px 14px rgba(139,92,246,0.35);
-        }
-        .add-node-btn:hover { background: #7c3aed; }
-
-        /* ── Offer editor panel ────────────────────────────────────────────── */
-        .offer-editor-panel {
-          width: 420px;
-          flex-shrink: 0;
-          background: #18181b;
-          border-left: 1px solid #27272a;
-          display: flex;
-          flex-direction: column;
-          overflow-y: auto;
-        }
-        .editor-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 16px 20px;
-          border-bottom: 1px solid #27272a;
-          font-weight: 700;
-          color: #fafafa;
-          font-size: 15px;
-          flex-shrink: 0;
-          position: sticky;
-          top: 0;
-          background: #18181b;
-          z-index: 1;
-        }
-        .editor-header button {
-          background: none;
-          border: none;
-          color: #71717a;
-          cursor: pointer;
-          font-size: 20px;
-          padding: 0;
-          line-height: 1;
-        }
-        .editor-header button:hover { color: #fafafa; }
-        .editor-sections {
-          padding: 16px 20px;
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-        .editor-section {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .section-label {
-          font-size: 11px;
-          font-weight: 700;
-          color: #71717a;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-        .type-selector {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-        .type-selector button {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #a1a1aa;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 12px;
-          cursor: pointer;
-          transition: all 0.15s;
-          font-weight: 600;
-        }
-        .type-selector button:hover { background: #3f3f46; color: #fafafa; }
-        .type-selector button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
-        .select-product-btn {
-          background: rgba(139,92,246,0.1);
-          border: 2px dashed rgba(139,92,246,0.4);
-          color: #a78bfa;
-          padding: 16px;
-          border-radius: 10px;
-          width: 100%;
-          font-weight: 600;
-          cursor: pointer;
-          font-size: 14px;
-          transition: all 0.15s;
-        }
-        .select-product-btn:hover { background: rgba(139,92,246,0.2); border-color: #8b5cf6; }
-        .selected-product {
-          display: flex;
-          gap: 10px;
-          align-items: center;
-          background: #0f0f14;
-          border: 1px solid #27272a;
-          border-radius: 8px;
-          padding: 10px;
-        }
-        .selected-product img {
-          width: 48px;
-          height: 48px;
-          object-fit: cover;
-          border-radius: 6px;
-          flex-shrink: 0;
-        }
-        .selected-product-info { flex: 1; min-width: 0; }
-        .selected-product-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: #fafafa;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .selected-product-variant { font-size: 11px; color: #71717a; margin-top: 2px; }
-        .selected-product-price { font-size: 13px; color: #22c55e; font-weight: 700; margin-top: 2px; }
-        .selected-product button {
-          background: none;
-          border: none;
-          color: #71717a;
-          cursor: pointer;
-          font-size: 16px;
-          padding: 4px;
-          margin-left: auto;
-          flex-shrink: 0;
-        }
-        .selected-product button:hover { color: #ef4444; }
-        .discount-type-btns {
-          display: flex;
-          gap: 6px;
-        }
-        .discount-type-btns button {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #a1a1aa;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 12px;
-          cursor: pointer;
-          transition: all 0.15s;
-          font-weight: 600;
-        }
-        .discount-type-btns button:hover { background: #3f3f46; color: #fafafa; }
-        .discount-type-btns button.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
-        input[type=number],
-        input[type=text] {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #fafafa;
-          padding: 8px 12px;
-          border-radius: 6px;
-          font-size: 14px;
-          width: 100%;
-          box-sizing: border-box;
-        }
-        input[type=number]:focus,
-        input[type=text]:focus {
-          outline: none;
-          border-color: #8b5cf6;
-        }
-        textarea {
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #fafafa;
-          padding: 8px 12px;
-          border-radius: 6px;
-          font-size: 14px;
-          width: 100%;
-          box-sizing: border-box;
-          resize: vertical;
-          min-height: 60px;
-          font-family: inherit;
-        }
-        textarea:focus { outline: none; border-color: #8b5cf6; }
-        label {
-          font-size: 12px;
-          color: #a1a1aa;
-          font-weight: 500;
-        }
-        .checkbox-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-        }
-        .checkbox-label input[type=checkbox] {
-          width: 16px;
-          height: 16px;
-          accent-color: #8b5cf6;
-        }
-        .wire-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .wire-label {
-          font-size: 12px;
-          font-weight: 700;
-          width: 70px;
-          flex-shrink: 0;
-        }
-        .wire-label.accept { color: #22c55e; }
-        .wire-label.decline { color: #ef4444; }
-        .wire-row select {
-          flex: 1;
-          background: #27272a;
-          border: 1px solid #3f3f46;
-          color: #fafafa;
-          padding: 6px 10px;
-          border-radius: 6px;
-          font-size: 13px;
-        }
-        .wire-row select:focus { outline: none; border-color: #8b5cf6; }
-        .delete-node-btn {
-          background: rgba(239,68,68,0.1);
-          border: 1px solid rgba(239,68,68,0.3);
-          color: #ef4444;
-          padding: 8px;
-          border-radius: 8px;
-          width: 100%;
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-        .delete-node-btn:hover { background: rgba(239,68,68,0.2); border-color: #ef4444; }
-        .editor-empty {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #71717a;
-          font-size: 14px;
-        }
-
-        /* ── Product picker modal ──────────────────────────────────────────── */
-        .product-picker-modal {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.7);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          backdrop-filter: blur(4px);
-        }
-        .product-picker-content {
-          background: #18181b;
-          border: 1px solid #27272a;
-          border-radius: 14px;
-          width: 580px;
-          max-height: 80vh;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        .pp-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 16px 20px;
-          border-bottom: 1px solid #27272a;
-          font-weight: 700;
-          font-size: 15px;
-          color: #fafafa;
-        }
-        .pp-header button {
-          background: none;
-          border: none;
-          color: #71717a;
-          cursor: pointer;
-          font-size: 20px;
-        }
-        .pp-header button:hover { color: #fafafa; }
-        .pp-search {
-          background: #0f0f14;
-          border: none;
-          border-bottom: 1px solid #27272a;
-          color: #fafafa;
-          padding: 14px 20px;
-          font-size: 15px;
-          outline: none;
-        }
-        .pp-search::placeholder { color: #71717a; }
-        .pp-loading {
-          padding: 16px;
-          text-align: center;
-          color: #71717a;
-          font-size: 13px;
-        }
-        .pp-results {
-          overflow-y: auto;
-          padding: 8px;
-        }
-        .pp-product {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-          padding: 10px;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-        .pp-product:hover { background: #27272a; }
-        .pp-thumb {
-          width: 56px;
-          height: 56px;
-          object-fit: cover;
-          border-radius: 6px;
-          flex-shrink: 0;
-        }
-        .pp-info { flex: 1; min-width: 0; }
-        .pp-name {
-          font-size: 14px;
-          font-weight: 600;
-          color: #fafafa;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .pp-price { font-size: 13px; color: #22c55e; font-weight: 700; margin-top: 3px; }
-        .pp-empty { padding: 24px; text-align: center; color: #71717a; font-size: 13px; }
-
-        /* ── Preview modal ────────────────────────────────────────────────── */
-        .preview-modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.8);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 2000;
-          backdrop-filter: blur(4px);
-        }
-        .preview-modal {
-          background: #fff;
-          border-radius: 16px;
-          width: 100%;
-          max-width: 560px;
-          overflow: hidden;
-          color: #1a1a1a;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-        .preview-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 12px 16px;
-          background: #f5f5f5;
-        }
-        .preview-badge {
-          background: #8b5cf6;
-          color: #fff;
-          font-size: 11px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          padding: 4px 10px;
-          border-radius: 20px;
-        }
-        .preview-close {
-          background: none;
-          border: none;
-          font-size: 24px;
-          color: #71717a;
-          cursor: pointer;
-          line-height: 1;
-        }
-        .preview-product-image {
-          width: 100%;
-          max-height: 280px;
-          object-fit: cover;
-          display: block;
-        }
-        .preview-body { padding: 20px; }
-        .preview-headline {
-          font-size: 22px;
-          font-weight: 800;
-          color: #1a1a1a;
-          margin: 0 0 8px;
-        }
-        .preview-message {
-          font-size: 15px;
-          color: #525252;
-          margin: 0 0 12px;
-          line-height: 1.5;
-        }
-        .preview-variant { font-size: 13px; color: #71717a; margin: 0 0 12px; }
-        .preview-price-block {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-bottom: 16px;
-          flex-wrap: wrap;
-        }
-        .preview-original-price {
-          font-size: 18px;
-          color: #ef4444;
-          text-decoration: line-through;
-        }
-        .preview-discounted-price {
-          font-size: 24px;
-          font-weight: 800;
-          color: #22c55e;
-        }
-        .preview-savings {
-          background: rgba(34,197,94,0.1);
-          color: #22c55e;
-          font-size: 12px;
-          font-weight: 700;
-          padding: 3px 8px;
-          border-radius: 4px;
-        }
-        .preview-accept-btn {
-          width: 100%;
-          background: #8b5cf6;
-          color: #fff;
-          border: none;
-          border-radius: 10px;
-          padding: 16px;
-          font-size: 16px;
-          font-weight: 700;
-          cursor: pointer;
-          margin-bottom: 10px;
-          transition: background 0.15s;
-        }
-        .preview-accept-btn:hover { background: #7c3aed; }
-        .preview-decline-btn {
-          width: 100%;
-          background: none;
-          border: none;
-          color: #71717a;
-          font-size: 14px;
-          cursor: pointer;
-          padding: 8px;
-          text-decoration: underline;
-        }
-        .preview-decline-btn:hover { color: #525252; }
-      `}</style>
+      <style>{OB_CSS}</style>
     </div>
   );
 }
+
+// ── CSS ──────────────────────────────────────────────────────────────────────
+
+const OB_CSS = `
+.ob-wizard { display: flex; flex-direction: column; height: 100%; background: #0f0f14; color: #fafafa; min-height: 0; }
+
+/* Empty state */
+.ob-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 12px; color: #71717a; text-align: center; padding: 40px; }
+.ob-empty-state h2 { color: #fafafa; margin: 0; font-size: 20px; }
+.ob-empty-state p { margin: 0; font-size: 14px; }
+
+/* Top tabs */
+.ob-tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid #27272a; background: #18181b; overflow-x: auto; }
+.ob-tab { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; color: #71717a; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.ob-tab:hover { color: #fafafa; background: #27272a; }
+.ob-tab.active { background: #0f0f14; color: #fafafa; border-color: #27272a; }
+.ob-tab-num { width: 18px; height: 18px; border-radius: 50%; background: #27272a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.ob-tab.active .ob-tab-num { background: #8b5cf6; }
+.ob-tab-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.ob-tab-badge { font-size: 10px; background: #27272a; color: #a1a1aa; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+.ob-tab.active .ob-tab-badge { background: rgba(139,92,246,0.2); color: #a78bfa; }
+.ob-tab-close { background: none; border: none; color: #52525b; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; margin-left: 2px; }
+.ob-tab-close:hover { color: #ef4444; }
+.ob-tab-add { padding: 10px 14px; color: #8b5cf6; background: none; border: none; cursor: pointer; font-size: 18px; font-weight: 600; }
+
+/* Body */
+.ob-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+/* Left panel */
+.ob-config { width: 380px; flex-shrink: 0; background: #18181b; border-right: 1px solid #27272a; display: flex; flex-direction: column; overflow-y: auto; }
+.ob-scroll-area { flex: 1; overflow-y: auto; }
+
+/* Step nav */
+.ob-step-nav { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid #27272a; gap: 0; flex-shrink: 0; }
+.ob-step { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52525b; cursor: pointer; transition: color 0.15s; }
+.ob-step.active { color: #8b5cf6; font-weight: 700; }
+.ob-step.done { color: #22c55e; }
+.ob-step-num { width: 20px; height: 20px; border-radius: 50%; border: 2px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.ob-step.done .ob-step-num { background: #22c55e; border-color: #22c55e; color: white; }
+.ob-step.active .ob-step-num { background: #8b5cf6; border-color: #8b5cf6; color: white; }
+.ob-step-line { flex: 1; height: 2px; background: #27272a; margin: 0 8px; align-self: center; }
+.ob-step.done .ob-step-line { background: #22c55e; }
+
+/* Step content */
+.wizard-step-content { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Field groups */
+.field-group { display: flex; flex-direction: column; gap: 6px; }
+.field-group > label { font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; }
+.field-group input[type=text],
+.field-group input[type=number],
+.field-group textarea,
+.field-group select { background: #0f0f14; border: 1px solid #27272a; color: #fafafa; padding: 9px 12px; border-radius: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
+.field-group input:focus,
+.field-group textarea:focus,
+.field-group select:focus { outline: none; border-color: #8b5cf6; }
+.field-group textarea { resize: vertical; min-height: 64px; }
+
+/* Radio groups */
+.radio-group { display: flex; flex-direction: column; gap: 6px; }
+.radio-option { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; cursor: pointer; font-size: 13px; color: #a1a1aa; transition: all 0.1s; }
+.radio-option:hover { border-color: #3f3f46; color: #fafafa; }
+.radio-option input { accent-color: #8b5cf6; width: 16px; height: 16px; }
+.radio-option.disabled { opacity: 0.5; cursor: not-allowed; }
+.coming-soon { font-size: 10px; background: #f59e0b; color: #000; padding: 1px 6px; border-radius: 4px; font-weight: 700; margin-left: auto; }
+
+/* Inline picker */
+.inline-picker { margin-top: 8px; }
+.picker-btn { background: rgba(139,92,246,0.1); border: 2px dashed rgba(139,92,246,0.3); color: #a78bfa; padding: 8px 14px; border-radius: 8px; width: 100%; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; transition: all 0.15s; }
+.picker-btn:hover { border-color: #8b5cf6; background: rgba(139,92,246,0.2); }
+.picker-btn-sm { background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.selected-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tag { display: inline-flex; align-items: center; gap: 4px; background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+.tag button { background: none; border: none; color: #71717a; cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+.tag button:hover { color: #ef4444; }
+
+/* Condition card */
+.condition-card { background: #0f0f14; border: 1px solid #27272a; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.condition-card-header { display: flex; flex-direction: column; gap: 2px; }
+.condition-card-title { font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; }
+.condition-card-hint { font-size: 11px; color: #52525b; line-height: 1.4; }
+.cond-row { display: flex; gap: 6px; align-items: center; }
+.cond-row select { flex: 1; background: #18181b; border: 1px solid #27272a; color: #fafafa; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+.cond-row input { flex: 1; background: #18181b; border: 1px solid #27272a; color: #fafafa; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+.cond-row input:focus, .cond-row select:focus { outline: none; border-color: #8b5cf6; }
+.cond-remove { background: none; border: none; color: #52525b; cursor: pointer; font-size: 16px; padding: 0 4px; }
+.cond-remove:hover { color: #ef4444; }
+.add-condition-btn { border: 2px dashed #27272a; color: #71717a; padding: 8px; border-radius: 8px; width: 100%; font-size: 12px; font-weight: 600; cursor: pointer; background: none; transition: all 0.15s; }
+.add-condition-btn:hover { border-color: #8b5cf6; color: #a78bfa; }
+
+/* Navigation buttons */
+.ob-nav { display: flex; justify-content: space-between; padding: 16px 20px; border-top: 1px solid #27272a; flex-shrink: 0; }
+.ob-back { background: none; border: 1px solid #27272a; color: #a1a1aa; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.ob-next { background: #8b5cf6; border: none; color: white; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.ob-next:hover { background: #7c3aed; }
+
+/* Selected product row */
+.selected-product-row { display: flex; gap: 10px; align-items: center; background: #0f0f14; border: 1px solid #27272a; border-radius: 8px; padding: 10px; }
+.sp-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.sp-info { flex: 1; min-width: 0; }
+.sp-title { font-size: 13px; font-weight: 600; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-variant { font-size: 11px; color: #71717a; margin-top: 2px; }
+.sp-change { background: none; border: 1px solid #27272a; color: #a78bfa; padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.select-product-btn { background: rgba(139,92,246,0.1); border: 2px dashed rgba(139,92,246,0.4); color: #a78bfa; padding: 14px; border-radius: 10px; width: 100%; font-weight: 600; cursor: pointer; font-size: 14px; }
+
+/* Variant grid */
+.variant-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.variant-btn { background: #0f0f14; border: 2px solid #27272a; border-radius: 8px; padding: 10px; text-align: left; cursor: pointer; transition: all 0.15s; position: relative; }
+.variant-btn:hover { border-color: #3f3f46; }
+.variant-btn.selected { border-color: #8b5cf6; background: rgba(139,92,246,0.08); }
+.vb-title { font-size: 13px; font-weight: 500; color: #fafafa; margin-bottom: 2px; }
+.vb-price { font-size: 13px; font-weight: 700; color: #a1a1aa; }
+.vb-oos { position: absolute; top: 6px; right: 6px; font-size: 10px; background: rgba(239,68,68,0.15); color: #ef4444; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+
+/* Qty control */
+.qty-control { display: flex; align-items: center; gap: 0; width: fit-content; }
+.qty-control button { width: 36px; height: 36px; background: #27272a; border: 1px solid #3f3f46; color: #fafafa; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.1s; }
+.qty-control button:first-child { border-radius: 8px 0 0 8px; }
+.qty-control button:last-child { border-radius: 0 8px 8px 0; }
+.qty-control button:hover { background: #8b5cf6; border-color: #8b5cf6; }
+.qty-control input { width: 60px; height: 36px; background: #0f0f14; border: 1px solid #3f3f46; border-left: none; border-right: none; color: #fafafa; text-align: center; font-size: 14px; font-weight: 700; }
+
+/* Discount type row */
+.discount-type-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.discount-type-btn { flex: 1; background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 7px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-align: center; }
+.discount-type-btn.active { background: #8b5cf6; border-color: #8b5cf6; color: white; }
+.discount-value-row { display: flex; align-items: center; gap: 8px; }
+.discount-prefix { font-size: 18px; font-weight: 700; color: #71717a; width: 20px; }
+.discount-value-row input { background: #0f0f14; border: 1px solid #27272a; color: #fafafa; padding: 9px 12px; border-radius: 8px; font-size: 14px; width: 100px; }
+.discount-preview { font-size: 13px; color: #22c55e; background: rgba(34,197,94,0.08); padding: 6px 10px; border-radius: 6px; }
+
+/* Toggle */
+.toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: #a1a1aa; font-weight: 500; }
+.toggle-label input { accent-color: #8b5cf6; width: 16px; height: 16px; }
+.sub-field { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.sub-field label { font-size: 11px; color: #71717a; font-weight: 600; }
+
+/* Color row */
+.color-row { display: flex; gap: 8px; align-items: center; }
+.color-row input[type=color] { width: 40px; height: 36px; padding: 2px; border: 1px solid #27272a; border-radius: 6px; background: #0f0f14; cursor: pointer; }
+.color-row input[type=text] { flex: 1; background: #0f0f14; border: 1px solid #27272a; color: #fafafa; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-family: monospace; }
+.range-input { width: 100%; accent-color: #8b5cf6; }
+
+/* Preview panel */
+.preview-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.preview-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #18181b; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+.preview-label { font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; }
+.device-toggle { display: flex; gap: 4px; }
+.device-toggle button { padding: 4px 12px; border-radius: 6px; border: 1px solid #27272a; background: transparent; color: #71717a; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.device-toggle button.active { background: #8b5cf6; border-color: #8b5cf6; color: white; }
+.preview-area { flex: 1; min-height: 0; overflow-y: auto; background: #0f0f14; padding: 24px; display: flex; justify-content: center; }
+`;

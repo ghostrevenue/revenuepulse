@@ -74,6 +74,7 @@ export default function App() {
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appConfig, setAppConfig] = useState(null);
+  const [funnel, setFunnel] = useState(null);
 
   // Hash-based routing
   useEffect(() => {
@@ -162,7 +163,11 @@ export default function App() {
     <div className="app-layout">
       <Sidebar activePage={activePage} setActivePage={(page) => { setActivePage(page); window.location.hash = page; }} store={store} />
       <main className="main-content">
-        <PageComponent store={store} appConfig={appConfig} />
+        {activePage === '#/offers' ? (
+          <OfferBuilder funnel={funnel || { id: null, name: 'Untitled Funnel', status: 'draft', nodes: [] }} onSave={(updated) => setFunnel(updated)} onClose={() => { setFunnel(null); setActivePage('#/dashboard'); }} />
+        ) : (
+          <PageComponent store={store} appConfig={appConfig} />
+        )}
       </main>
     </div>
   );
