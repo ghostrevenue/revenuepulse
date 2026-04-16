@@ -15,11 +15,22 @@ function makeItem(overrides = {}) {
     offer_type: 'add_product',
     headline: 'Wait! Add this to your order',
     message: 'Get it delivered with your current order — just one click away.',
+    // Single product (backwards compat)
     product_id: '',
     product_title: '',
     product_price: '',
     product_image: '',
     variant_id: '',
+    // NEW: Multiple products array
+    products: [],
+    // NEW: Chain pointers — ID of next item in this path (null = end of chain)
+    next_accept_item_id: null,
+    next_decline_item_id: null,
+    // Per-item targeting (which products must be in cart for THIS item to show)
+    item_target_products_include: [],
+    item_target_collections_include: [],
+    item_target_products_exclude: [],
+    item_target_collections_exclude: [],
     discount_code: '',
     discount_percent: '',
     warranty_price: '',
@@ -807,7 +818,7 @@ export default function OfferBuilder({ store, appConfig }) {
               <div className="flow-builder-section">
                 <div className="flow-builder-row">
                   <div className="flow-node-wrapper trigger-node-wrapper">
-                    <div className="flow-node-card-full trigger-node-card" onClick={() => setStep(1)}>
+                    <div className="flow-node-card-full trigger-node-card" style={{ cursor: 'default' }}>
                       <div className="flow-node-accent trigger-accent"></div>
                       <div className="flow-node-content">
                         <div className="flow-node-icon">
@@ -983,13 +994,69 @@ export default function OfferBuilder({ store, appConfig }) {
                                     {item.timer_minutes}:00
                                   </span>
                                 )}
+                                {(item.item_target_products_include?.length > 0 || item.item_target_products_exclude?.length > 0) && (
+                                  <span className="flow-meta-tag" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.25)' }}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    {item.item_target_products_include?.length > 0 ? `${item.item_target_products_include.length} targeted` : '1 excluded'}
+                                  </span>
+                                )}
                               </div>
+                              {/* Chain indicators */}
+                              {item.next_accept_item_id && (
+                                <div className="flow-chain-indicator accept-chain">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                  <span>Chains to next upsell</span>
+                                </div>
+                              )}
+                              {item.next_decline_item_id && (
+                                <div className="flow-chain-indicator decline-chain">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                  <span>Chains to downsell</span>
+                                </div>
+                              )}
                             </div>
                             <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeAcceptItem(item.id); }}>
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
                                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                               </svg>
                             </div>
+                          </div>
+                          {/* Chain selectors */}
+                          <div className="flow-node-chain-row">
+                            <span className="flow-chain-select-label accept-label">→ Accept</span>
+                            <select
+                              className="flow-chain-select"
+                              value={item.next_accept_item_id || ''}
+                              onChange={(e) => { e.stopPropagation(); updateAcceptItem(item.id, { next_accept_item_id: e.target.value || null }); }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">— End of path —</option>
+                              {form.accept_path_items.filter(i => i.id !== item.id).map(i => (
+                                <option key={i.id} value={i.id}>
+                                  {i.headline || `Upsell ${form.accept_path_items.indexOf(i) + 1}`}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="flow-chain-select-label decline-label">→ Decline</span>
+                            <select
+                              className="flow-chain-select"
+                              value={item.next_decline_item_id || ''}
+                              onChange={(e) => { e.stopPropagation(); updateAcceptItem(item.id, { next_decline_item_id: e.target.value || null }); }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">— End of path —</option>
+                              {form.decline_path_items.map(i => (
+                                <option key={i.id} value={i.id}>
+                                  {i.headline || `Downsell ${form.decline_path_items.indexOf(i) + 1}`}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         </div>
                       </div>
@@ -1119,13 +1186,69 @@ export default function OfferBuilder({ store, appConfig }) {
                                     {item.timer_minutes}:00
                                   </span>
                                 )}
+                                {(item.item_target_products_include?.length > 0 || item.item_target_products_exclude?.length > 0) && (
+                                  <span className="flow-meta-tag" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.25)' }}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    {item.item_target_products_include?.length > 0 ? `${item.item_target_products_include.length} targeted` : '1 excluded'}
+                                  </span>
+                                )}
                               </div>
+                              {/* Chain indicators */}
+                              {item.next_decline_item_id && (
+                                <div className="flow-chain-indicator decline-chain">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                  <span>Chains to next downsell</span>
+                                </div>
+                              )}
+                              {item.next_accept_item_id && (
+                                <div className="flow-chain-indicator accept-chain">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                  <span>Chains to upsell</span>
+                                </div>
+                              )}
                             </div>
                             <div className="flow-node-remove" onClick={(e) => { e.stopPropagation(); removeDeclineItem(item.id); }}>
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
                                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                               </svg>
                             </div>
+                          </div>
+                          {/* Chain selectors */}
+                          <div className="flow-node-chain-row">
+                            <span className="flow-chain-select-label decline-label">→ Decline</span>
+                            <select
+                              className="flow-chain-select"
+                              value={item.next_decline_item_id || ''}
+                              onChange={(e) => { e.stopPropagation(); updateDeclineItem(item.id, { next_decline_item_id: e.target.value || null }); }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">— End of path —</option>
+                              {form.decline_path_items.filter(i => i.id !== item.id).map(i => (
+                                <option key={i.id} value={i.id}>
+                                  {i.headline || `Downsell ${form.decline_path_items.indexOf(i) + 1}`}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="flow-chain-select-label accept-label">→ Accept</span>
+                            <select
+                              className="flow-chain-select"
+                              value={item.next_accept_item_id || ''}
+                              onChange={(e) => { e.stopPropagation(); updateDeclineItem(item.id, { next_accept_item_id: e.target.value || null }); }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">— End of path —</option>
+                              {form.accept_path_items.map(i => (
+                                <option key={i.id} value={i.id}>
+                                  {i.headline || `Upsell ${form.accept_path_items.indexOf(i) + 1}`}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         </div>
                       </div>
@@ -1950,6 +2073,58 @@ export default function OfferBuilder({ store, appConfig }) {
         .flow-targeting-item.highlight {
           color: #a78bfa;
         }
+
+        /* NEW: Chain indicator on flow nodes */
+        .flow-chain-indicator {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 4px;
+          margin-top: 4px;
+        }
+        .flow-chain-indicator.accept-chain {
+          background: rgba(34,197,94,0.1);
+          color: #22c55e;
+          border: 1px solid rgba(34,197,94,0.25);
+        }
+        .flow-chain-indicator.decline-chain {
+          background: rgba(239,68,68,0.1);
+          color: #ef4444;
+          border: 1px solid rgba(239,68,68,0.25);
+        }
+
+        /* NEW: Chain selector row within node card */
+        .flow-node-chain-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 10px;
+          background: #1a1a1f;
+          border-top: 1px solid #27272a;
+          margin-top: 6px;
+        }
+        .flow-chain-select-label {
+          font-size: 10px;
+          font-weight: 600;
+          color: #71717a;
+          white-space: nowrap;
+        }
+        .flow-chain-select-label.accept-label { color: #22c55e; }
+        .flow-chain-select-label.decline-label { color: #ef4444; }
+        .flow-chain-select {
+          flex: 1;
+          background: #27272a;
+          border: 1px solid #3f3f46;
+          color: #a1a1aa;
+          padding: 3px 6px;
+          border-radius: 4px;
+          font-size: 11px;
+          cursor: pointer;
+        }
+        .flow-chain-select:focus { outline: none; border-color: #8b5cf6; }
 
         /* Form actions wrapper */
         .flow-builder-form-actions {

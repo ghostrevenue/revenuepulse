@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import VisualPreview from './VisualPreview.jsx';
+import TargetingSelector from './TargetingSelector.jsx';
 
 /**
  * OfferEditor — slide-in panel for editing a single offer item (upsell or downsell).
@@ -31,6 +32,13 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
     variant_id: item.variant_id || '',
     variant_options: item.variant_options || [],
     variant_title: item.variant_title || '',
+    // NEW: Multiple products array
+    products: item.products || [],
+    // Per-item targeting
+    item_target_products_include: item.item_target_products_include || [],
+    item_target_collections_include: item.item_target_collections_include || [],
+    item_target_products_exclude: item.item_target_products_exclude || [],
+    item_target_collections_exclude: item.item_target_collections_exclude || [],
     discount_code: item.discount_code || '',
     discount_percent: item.discount_percent || '',
     warranty_price: item.warranty_price || '',
@@ -55,6 +63,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
     discount: true,
     appearance: true,
     timer: true,
+    targeting: true,
   });
 
   // Guard against null item — render empty state, all hooks still run
@@ -78,10 +87,10 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
 
   function SectionHeader({ title, isOpen, onToggle, badge }) {
     return (
-      <div className="section-header" onClick={onToggle}>
+      <div className="section-header" onClick={onToggle} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}>
         <span className="section-title">{title}</span>
-        {badge && <span className="section-badge">{badge}</span>}
-        <svg className={`section-chevron ${isOpen ? 'open' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+        {badge && <span className="section-badge" style={{ pointerEvents: 'none' }}>{badge}</span>}
+        <svg className={`section-chevron ${isOpen ? 'open' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" style={{ pointerEvents: 'none' }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
@@ -123,8 +132,8 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
       image: v.image ? v.image.src : productImg,
     }));
 
-    setForm(f => ({
-      ...f,
+    // Create a new product entry
+    const newProduct = {
       product_id: String(product.id),
       product_title: product.title,
       product_price: defaultVariant.price || '',
@@ -132,7 +141,35 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
       variant_id: String(defaultVariant.id),
       variant_title: defaultVariant.title !== 'Default Title' ? defaultVariant.title : '',
       variant_options: variantOptions,
-    }));
+    };
+
+    // If we have a products array, add to it; otherwise use the legacy single-product fields
+    if (form.products !== undefined) {
+      // Enforce max of 6 products
+      if (form.products.length >= 6) {
+        alert('Maximum 6 products per offer item.');
+        setSearchQuery('');
+        setSearchResults([]);
+        setShowProductSearch(false);
+        return;
+      }
+      setForm(f => ({
+        ...f,
+        products: [...(f.products || []), newProduct],
+      }));
+    } else {
+      // Legacy single-product mode
+      setForm(f => ({
+        ...f,
+        product_id: String(product.id),
+        product_title: product.title,
+        product_price: defaultVariant.price || '',
+        product_image: productImg,
+        variant_id: String(defaultVariant.id),
+        variant_title: defaultVariant.title !== 'Default Title' ? defaultVariant.title : '',
+        variant_options: variantOptions,
+      }));
+    }
     setSearchQuery('');
     setSearchResults([]);
     setShowProductSearch(false);
@@ -179,7 +216,9 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
   };
 
   const sectionSummary = {
-    product: form.product_title ? form.product_title : 'No product selected',
+    product: form.products && form.products.length > 0
+      ? `${form.products.length} product${form.products.length !== 1 ? 's' : ''} selected`
+      : form.product_title ? form.product_title : 'No product selected',
     discount: form.offer_type === 'discount' || form.offer_type === 'discount_code'
       ? (form.discount_code ? `${form.discount_code} (${form.discount_percent}%)` : 'No discount set')
       : form.offer_type === 'warranty'
@@ -187,6 +226,9 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
       : (form.product_price ? `$${parseFloat(form.product_price).toFixed(2)}` : 'No price set'),
     appearance: form.show_badge ? form.badge_text || 'Badge on' : 'Badge off',
     timer: form.show_timer ? `${form.timer_minutes} min` : 'Timer off',
+    targeting: (form.item_target_products_include?.length > 0 || form.item_target_products_exclude?.length > 0)
+      ? `${(form.item_target_products_include?.length || 0) + (form.item_target_products_exclude?.length || 0)} targeting rules`
+      : 'No targeting',
   };
 
   return (
@@ -305,10 +347,76 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
                   />
                   {openSections.product && (
                     <div className="section-body">
+                      {/* NEW: Multiple products list */}
+                      {form.products && form.products.length > 0 && (
+                        <div className="products-list">
+                          <label className="form-label" style={{ marginBottom: 8 }}>Selected Products ({form.products.length})</label>
+                          {form.products.map((prod, idx) => (
+                            <div key={idx} className="product-list-item">
+                              <div className="product-list-item-info">
+                                {prod.product_image && (
+                                  <img src={prod.product_image} alt="" className="product-list-thumb" />
+                                )}
+                                <div className="product-list-details">
+                                  <div className="product-list-name">{prod.product_title}</div>
+                                  <div className="product-list-price">
+                                    {prod.product_price ? `$${parseFloat(prod.product_price).toFixed(2)}` : ''}
+                                    {prod.variant_title && prod.variant_title !== 'Default Title' && ` — ${prod.variant_title}`}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="product-list-actions">
+                                {/* Variant selector per product */}
+                                {prod.variant_options && prod.variant_options.length > 1 && (
+                                  <select
+                                    className="form-input product-variant-select"
+                                    value={prod.variant_id || ''}
+                                    onChange={(e) => {
+                                      const updated = [...form.products];
+                                      const variant = prod.variant_options.find(v => v.id === e.target.value);
+                                      updated[idx] = {
+                                        ...updated[idx],
+                                        variant_id: e.target.value,
+                                        variant_title: variant?.title || '',
+                                        product_price: variant?.price || updated[idx].product_price,
+                                        product_image: variant?.image || updated[idx].product_image,
+                                      };
+                                      updateField('products', updated);
+                                    }}
+                                  >
+                                    {prod.variant_options.map(v => (
+                                      <option key={v.id} value={v.id}>
+                                        {v.title} — ${parseFloat(v.price || 0).toFixed(2)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <button
+                                  type="button"
+                                  className="product-remove-btn"
+                                  onClick={() => {
+                                    const updated = form.products.filter((_, i) => i !== idx);
+                                    updateField('products', updated);
+                                  }}
+                                  title="Remove product"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Product search — adds to the products array */}
                       <div className="form-group">
-                        <label className="form-label">Product</label>
+                        <label className="form-label">
+                          {form.products && form.products.length > 0 ? 'Add Another Product' : 'Product'}
+                        </label>
                         <div className="product-search-wrapper">
-                          {form.product_image && (
+                          {form.product_image && form.products.length === 0 && (
                             <img src={form.product_image} alt="" className="product-search-thumb" />
                           )}
                           <div className="product-search-input-wrap">
@@ -320,7 +428,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
                               placeholder="Click to search products..."
                               onClick={() => setShowProductSearch(s => !s)}
                             />
-                            {form.product_title && (
+                            {form.product_title && form.products.length === 0 && (
                               <button type="button" className="product-clear-btn"
                                 onClick={() => setForm(f => ({ ...f, product_id: '', product_title: '', product_price: '', product_image: '', variant_id: '', variant_options: [], variant_title: '' }))}>
                                 ×
@@ -369,7 +477,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
                         )}
                       </div>
 
-                      {/* Variant Selector */}
+                      {/* Variant Selector — applies to first/all products when no multi-product */}
                       {form.variant_options && form.variant_options.length > 1 && (
                         <div className="form-group">
                           <label className="form-label">Variant</label>
@@ -559,6 +667,41 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
                 )}
               </div>
 
+              {/* ==================== TARGETING SECTION ==================== */}
+              <div className="collapsible-section">
+                <SectionHeader
+                  title="Cart Targeting"
+                  isOpen={openSections.targeting}
+                  onToggle={() => toggleSection('targeting')}
+                  badge={sectionSummary.targeting}
+                />
+                {openSections.targeting && (
+                  <div className="section-body">
+                    <p style={{ fontSize: '12px', color: '#71717a', marginBottom: '12px' }}>
+                      Control which products in the cart trigger this specific offer. Leave empty for any cart.
+                    </p>
+                    <div className="form-group">
+                      <label className="form-label">Include — Only show when these products are in cart</label>
+                      <TargetingSelector
+                        mode="include"
+                        field="products"
+                        values={form.item_target_products_include || []}
+                        onChange={(items) => updateField('item_target_products_include', items)}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginTop: '12px' }}>
+                      <label className="form-label">Exclude — Never show when these products are in cart</label>
+                      <TargetingSelector
+                        mode="exclude"
+                        field="products"
+                        values={form.item_target_products_exclude || []}
+                        onChange={(items) => updateField('item_target_products_exclude', items)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>
 
             {/* Right: Live Visual Preview */}
@@ -642,7 +785,7 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
         .preview-mode-btn:hover { background: #3f3f46; color: #fafafa; }
         .preview-mode-btn.active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
         .offer-editor-body {
-          display: flex; flex: 1; overflow: hidden;
+          display: flex; flex: 1; min-height: 0; overflow: hidden;
         }
         .offer-editor-form-col {
           flex: 1.2; overflow-y: auto; padding: 20px 24px;
@@ -876,6 +1019,79 @@ export default function OfferEditor({ item, pathType, onSave, onClose, shop }) {
           display: flex;
           justify-content: center;
           background: #0f0f14;
+        }
+
+        /* NEW: Products list in offer editor */
+        .products-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        .product-list-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          background: #1c1c1f;
+          border: 1px solid #27272a;
+          border-radius: 8px;
+          padding: 8px 10px;
+        }
+        .product-list-item-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+          min-width: 0;
+        }
+        .product-list-thumb {
+          width: 36px;
+          height: 36px;
+          border-radius: 5px;
+          object-fit: cover;
+          flex-shrink: 0;
+        }
+        .product-list-details { flex: 1; min-width: 0; }
+        .product-list-name {
+          font-size: 13px;
+          font-weight: 500;
+          color: #e5e5e5;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .product-list-price {
+          font-size: 11px;
+          color: #22c55e;
+          font-weight: 600;
+          margin-top: 2px;
+        }
+        .product-list-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .product-variant-select {
+          font-size: 11px;
+          padding: 3px 6px;
+          max-width: 120px;
+        }
+        .product-remove-btn {
+          background: none;
+          border: none;
+          color: #52525b;
+          cursor: pointer;
+          padding: 4px;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          transition: all 0.15s;
+        }
+        .product-remove-btn:hover {
+          background: rgba(239,68,68,0.15);
+          color: #ef4444;
         }
       `}</style>
       </div>
