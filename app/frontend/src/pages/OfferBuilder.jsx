@@ -75,9 +75,31 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
+  // Persist funnel to backend and update local state
+  async function handleSave(data) {
+    // Always update local state first so UI stays responsive
+    onSave(data);
+
+    // Persist to backend
+    try {
+      if (data.id) {
+        await api.updateUpsellOffer(data.id, data);
+      } else {
+        const result = await api.createUpsellOffer(data);
+        // If the result has an ID, update the funnel with the new ID
+        if (result && result.id) {
+          onSave({ ...data, id: result.id });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to save offer:', e);
+      // Local state was already updated above, so UI is still usable
+    }
+  }
+
   function updateNode(nodeId, updates) {
     const updated = funnel.nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n);
-    onSave({ ...funnel, nodes: updated });
+    handleSave({ ...funnel, nodes: updated });
   }
 
   function updateStyle(updates) {
@@ -102,7 +124,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
       on_decline_node_id: null,
       position: { x: 0, y: 0 },
     };
-    onSave({ ...funnel, nodes: [...funnel.nodes, newNode] });
+    handleSave({ ...funnel, nodes: [...funnel.nodes, newNode] });
     setSelectedNodeId(newNode.id);
     setActiveStep(1);
     setNodeStyle({});
@@ -111,7 +133,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
   function removeNode(nodeId) {
     if (funnel.nodes.length <= 1) return;
     const newNodes = funnel.nodes.filter(n => n.id !== nodeId);
-    onSave({ ...funnel, nodes: newNodes });
+    handleSave({ ...funnel, nodes: newNodes });
     setSelectedNodeId(newNodes[0]?.id || null);
   }
 
@@ -299,6 +321,56 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
               />
             ))}
             <button className="add-condition-btn" onClick={addAndCondition}>+ Add condition</button>
+          </div>
+        </div>
+
+        {/* Flow Control */}
+        <div className="field-group">
+          <div className="condition-card">
+            <div className="condition-card-header">
+              <span className="condition-card-title">Flow Control</span>
+              <span className="condition-card-hint">Define what happens after this offer — chain upsells and downsells together</span>
+            </div>
+
+            {/* On Accept */}
+            <div className="flow-row">
+              <div className="flow-label">
+                <span className="flow-icon accept">✓</span>
+                <span>If accepted</span>
+              </div>
+              <select
+                value={selectedNode.on_accept_node_id || ''}
+                onChange={e => updateNode(selectedNodeId, { on_accept_node_id: e.target.value || null })}
+                className="flow-select"
+              >
+                <option value="">End of funnel</option>
+                {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.headline || 'Untitled'} ({n.id.startsWith('node_') ? 'Upsell' : 'Downsell'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* On Decline */}
+            <div className="flow-row">
+              <div className="flow-label">
+                <span className="flow-icon decline">✗</span>
+                <span>If declined</span>
+              </div>
+              <select
+                value={selectedNode.on_decline_node_id || ''}
+                onChange={e => updateNode(selectedNodeId, { on_decline_node_id: e.target.value || null })}
+                className="flow-select"
+              >
+                <option value="">End of funnel</option>
+                {funnel.nodes.filter(n => n.id !== selectedNodeId).map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.headline || 'Untitled'} ({n.id.startsWith('node_') ? 'Upsell' : 'Downsell'})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -621,14 +693,19 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
 
           {/* Navigation */}
           <div className="ob-nav">
-            {activeStep > 1 ? (
-              <button className="ob-back" onClick={() => setActiveStep(s => s - 1)}>← Back</button>
-            ) : <div />}
-            {activeStep < 3 ? (
-              <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
-            ) : (
-              <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
-            )}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {activeStep > 1 && (
+                <button className="ob-back" onClick={() => setActiveStep(s => s - 1)}>← Back</button>
+              )}
+              <button className="ob-save" onClick={() => handleSave(funnel)}>Save Offer</button>
+            </div>
+            <div>
+              {activeStep < 3 ? (
+                <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
+              ) : (
+                <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -784,6 +861,8 @@ const OB_CSS = `
 /* Navigation buttons */
 .ob-nav { display: flex; justify-content: space-between; padding: 16px 20px; border-top: 1px solid #27272a; flex-shrink: 0; }
 .ob-back { background: none; border: 1px solid #27272a; color: #a1a1aa; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.ob-save { background: #0a8754; border: none; color: white; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.ob-save:hover { background: #0d9668; }
 .ob-next { background: #8b5cf6; border: none; color: white; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .ob-next:hover { background: #7c3aed; }
 
@@ -842,4 +921,13 @@ const OB_CSS = `
 .device-toggle button { padding: 4px 12px; border-radius: 6px; border: 1px solid #27272a; background: transparent; color: #71717a; font-size: 12px; cursor: pointer; transition: all 0.15s; }
 .device-toggle button.active { background: #8b5cf6; border-color: #8b5cf6; color: white; }
 .preview-area { flex: 1; min-height: 0; overflow-y: auto; background: #0f0f14; padding: 24px; display: flex; justify-content: center; }
+
+/* Flow Control */
+.flow-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.flow-label { display: flex; align-items: center; gap: 6px; width: 100px; font-size: 13px; color: #a1a1aa; flex-shrink: 0; }
+.flow-icon { font-size: 14px; font-weight: 700; width: 20px; text-align: center; }
+.flow-icon.accept { color: #22c55e; }
+.flow-icon.decline { color: #ef4444; }
+.flow-select { flex: 1; background: #18181b; border: 1px solid #27272a; color: #fafafa; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+.flow-select:focus { outline: none; border-color: #8b5cf6; }
 `;

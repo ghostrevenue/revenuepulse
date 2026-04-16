@@ -33,11 +33,14 @@ async function initSqlite() {
       id TEXT PRIMARY KEY,
       shop TEXT UNIQUE NOT NULL,
       access_token TEXT,
+      refresh_token TEXT,
       scope TEXT,
       upsell_config TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Add refresh_token column if it doesn't exist (for existing installs)
+  db.run('ALTER TABLE stores ADD COLUMN refresh_token TEXT');
   db.run(`
     CREATE TABLE IF NOT EXISTS revenue_data (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -228,10 +231,13 @@ async function initPostgres() {
       id TEXT PRIMARY KEY,
       shop TEXT UNIQUE NOT NULL,
       access_token TEXT,
+      refresh_token TEXT,
       scope TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Add refresh_token column if it doesn't exist (for existing installs)
+  await pgPool.query(`ALTER TABLE stores ADD COLUMN refresh_token TEXT`);
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS revenue_data (
       id SERIAL PRIMARY KEY,

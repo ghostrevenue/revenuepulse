@@ -20,13 +20,13 @@ export const StoreModel = {
   async create(data) {
     if (db.usePostgres) {
       return db.query(
-        'INSERT INTO stores (id, shop, access_token, scope) VALUES ($1, $2, $3, $4)',
-        [data.id, data.shop, data.accessToken, data.scope]
+        'INSERT INTO stores (id, shop, access_token, refresh_token, scope) VALUES ($1, $2, $3, $4, $5)',
+        [data.id, data.shop, data.accessToken, data.refreshToken || null, data.scope]
       );
     }
     return db.prepare(
-      'INSERT INTO stores (id, shop, access_token, scope) VALUES (?, ?, ?, ?)'
-    ).run(data.id, data.shop, data.accessToken, data.scope);
+      'INSERT INTO stores (id, shop, access_token, refresh_token, scope) VALUES (?, ?, ?, ?, ?)'
+    ).run(data.id, data.shop, data.accessToken, data.refreshToken || null, data.scope);
   },
 
   async updateToken(shop, token) {
@@ -34,5 +34,16 @@ export const StoreModel = {
       return db.query('UPDATE stores SET access_token = $1 WHERE shop = $2', [token, shop]);
     }
     return db.prepare('UPDATE stores SET access_token = ? WHERE shop = ?').run(token, shop);
+  },
+
+  async updateTokenAndRefresh(shop, accessToken, refreshToken) {
+    if (db.usePostgres) {
+      return db.query(
+        'UPDATE stores SET access_token = $1, refresh_token = $2 WHERE shop = $3',
+        [accessToken, refreshToken, shop]
+      );
+    }
+    return db.prepare('UPDATE stores SET access_token = ?, refresh_token = ? WHERE shop = ?')
+      .run(accessToken, refreshToken, shop);
   }
 };

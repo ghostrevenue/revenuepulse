@@ -14,6 +14,77 @@ async function verifyShop(req, res, next) {
   next();
 }
 
+// Detect non-expiring token deprecation error
+function isNonExpiringTokenError(body) {
+  if (!body) return false;
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
+  return text.includes('Non-expiring access tokens are no longer accepted');
+}
+
+// Attempt to refresh an expired offline access token
+async function refreshAccessToken(shop, refreshToken) {
+  if (!refreshToken) return null;
+  const apiKey = process.env.SHOPIFY_API_KEY;
+  const apiSecret = process.env.SHOPIFY_API_SECRET;
+  try {
+    const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: apiKey,
+        client_secret: apiSecret,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token) return null;
+    return data;
+  } catch (e) {
+    console.error('[refreshAccessToken] error:', e.message);
+    return null;
+  }
+}
+
+// Fetch wrapper that automatically handles token refresh on 401
+async function shopifyFetch(req, url, options = {}) {
+  const accessToken = req.store.access_token;
+  const shop = req.store.shop;
+  const refreshToken = req.store.refresh_token;
+
+  const headers = {
+    'X-Shopify-Access-Token': accessToken,
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  let response = await fetch(url, { ...options, headers });
+
+  // If 401 with non-expiring token error, try to refresh
+  if (response.status === 401 && !options._retrying) {
+    const body = await response.text();
+    if (isNonExpiringTokenError(body) && refreshToken) {
+      console.log(`[shopifyFetch] token expired for ${shop}, attempting refresh...`);
+      const newTokenData = await refreshAccessToken(shop, refreshToken);
+      if (newTokenData) {
+        // Update stored tokens
+        await StoreModel.updateTokenAndRefresh(shop, newTokenData.access_token, newTokenData.refresh_token || refreshToken);
+        req.store.access_token = newTokenData.access_token;
+        req.store.refresh_token = newTokenData.refresh_token || refreshToken;
+        console.log(`[shopifyFetch] token refreshed for ${shop}`);
+
+        // Retry with new token
+        const newHeaders = { ...headers, 'X-Shopify-Access-Token': newTokenData.access_token };
+        response = await fetch(url, { ...options, headers: newHeaders });
+        response._retried = true;
+      }
+    }
+  }
+
+  return response;
+}
+
 // ── GET /api/shopify/products/search ─────────────────────────────────────────
 // Search products from the merchant's Shopify store (for targeting selectors)
 // Frontend calls this via searchShopifyProducts(query, limit)
@@ -22,15 +93,15 @@ router.get('/products/search', verifyShop, async (req, res) => {
   try {
     const shop = req.store.shop;
     const accessToken = req.store.access_token;
-    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify' });
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
 
     const apiUrl = `https://${shop}/admin/api/2024-01/products.json?title=${encodeURIComponent(query)}&limit=${Math.min(parseInt(limit), 50)}`;
-    const response = await fetch(apiUrl, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await shopifyFetch(req, apiUrl);
+
+    if (response.status === 401 && !response._retried) {
+      // Refresh failed or not possible — request re-auth
+      return res.status(401).json({ error: 'Shopify session expired. Please reconnect your store.', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
+    }
 
     if (!response.ok) {
       const err = await response.text();
@@ -104,14 +175,14 @@ router.get('/products', verifyShop, async (req, res) => {
     `;
 
     const variables = { query, cursor, first: Math.min(parseInt(limit), 50) };
-    const response = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
+    const response = await shopifyFetch(req, `https://${shop}/admin/api/2024-01/graphql.json`, {
       method: 'POST',
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ query: gqlQuery, variables }),
     });
+
+    if (response.status === 401 && !response._retried) {
+      return res.status(401).json({ error: 'Shopify session expired. Please reconnect your store.', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
+    }
 
     if (!response.ok) {
       const err = await response.text();
@@ -158,14 +229,13 @@ router.get('/collections', verifyShop, async (req, res) => {
   try {
     const shop = req.store.shop;
     const accessToken = req.store.access_token;
-    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify' });
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
 
-    const response = await fetch(`https://${shop}/admin/api/2024-01/custom_collections.json?limit=250`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await shopifyFetch(req, `https://${shop}/admin/api/2024-01/custom_collections.json?limit=250`);
+
+    if (response.status === 401 && !response._retried) {
+      return res.status(401).json({ error: 'Shopify session expired. Please reconnect your store.', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
+    }
 
     if (!response.ok) {
       const err = await response.text();
@@ -193,15 +263,14 @@ router.get('/product-tags', verifyShop, async (req, res) => {
   try {
     const shop = req.store.shop;
     const accessToken = req.store.access_token;
-    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify' });
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
 
     // Fetch products with only tags field to get unique tags
-    const response = await fetch(`https://${shop}/admin/api/2024-01/products.json?fields=tags&limit=250`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await shopifyFetch(req, `https://${shop}/admin/api/2024-01/products.json?fields=tags&limit=250`);
+
+    if (response.status === 401 && !response._retried) {
+      return res.status(401).json({ error: 'Shopify session expired. Please reconnect your store.', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
+    }
 
     if (!response.ok) {
       const err = await response.text();
@@ -229,17 +298,16 @@ router.get('/price-rules', verifyShop, async (req, res) => {
   try {
     const shop = req.store.shop;
     const accessToken = req.store.access_token;
-    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_auth: true });
+    if (!accessToken) return res.status(401).json({ error: 'Not connected to Shopify', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
 
-    const response = await fetch(
+    const response = await shopifyFetch(
+      req,
       `https://${shop}/admin/api/2024-01/price_rules.json?limit=250`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
-        },
-      }
     );
+
+    if (response.status === 401 && !response._retried) {
+      return res.status(401).json({ error: 'Shopify session expired. Please reconnect your store.', needs_reauth: true, reconnect_url: `/api/auth/reconnect?shop=${shop}` });
+    }
 
     if (!response.ok) {
       const err = await response.text();

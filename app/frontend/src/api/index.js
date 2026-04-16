@@ -30,7 +30,12 @@ async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error || `Request failed with status ${res.status}`);
+    const error = new Error(err.error || `Request failed with status ${res.status}`);
+    if (err.needs_reauth) {
+      error.needs_reauth = true;
+      error.reconnect_url = err.reconnect_url || '/api/auth/reconnect';
+    }
+    throw error;
   }
   return res.json();
 }

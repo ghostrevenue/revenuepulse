@@ -218,6 +218,7 @@ router.get('/callback', async (req, res) => {
     await db.ensureReady();
 
     let accessToken = code;
+    let refreshToken = null;
 
     // Exchange code for real access token via Shopify OAuth API
     // Partners Dashboard always sends state (CSRF UUID), so !state = false → always hits real exchange
@@ -238,7 +239,8 @@ router.get('/callback', async (req, res) => {
         const tokenData = await tokenRes.json();
         if (tokenData.access_token) {
           accessToken = tokenData.access_token;
-          console.log('[/api/auth/callback] REAL access token acquired for', shop);
+          refreshToken = tokenData.refresh_token || null;
+          console.log('[/api/auth/callback] REAL access token acquired for', shop, '| has refresh_token:', !!refreshToken);
         } else {
           console.error('[/api/auth/callback] token exchange failed:', tokenData);
         }
@@ -252,14 +254,14 @@ router.get('/callback', async (req, res) => {
     let store = await StoreModel.findByShop(shop);
     if (!store) {
       const id = uuidv4();
-      await StoreModel.create({ id, shop, accessToken, scope: 'read_orders,read_products,read_analytics' });
+      await StoreModel.create({ id, shop, accessToken, refreshToken, scope: 'read_orders,read_products,read_analytics' });
       console.log('[/api/auth/callback] store created for', shop, 'with token prefix:', accessToken?.slice(0, 10));
     } else {
       // Update existing store's token using UPDATE query — store is a plain object with no .save()
       if (db.usePostgres) {
-        await db.query('UPDATE stores SET access_token = $1, scope = $2 WHERE shop = $3', [accessToken, 'read_orders,read_products,read_analytics', shop]);
+        await db.query('UPDATE stores SET access_token = $1, refresh_token = $2, scope = $3 WHERE shop = $4', [accessToken, refreshToken, 'read_orders,read_products,read_analytics', shop]);
       } else {
-        db.prepare('UPDATE stores SET access_token = ?, scope = ? WHERE shop = ?').run(accessToken, 'read_orders,read_products,read_analytics', shop);
+        db.prepare('UPDATE stores SET access_token = ?, refresh_token = ?, scope = ? WHERE shop = ?').run(accessToken, refreshToken, 'read_orders,read_products,read_analytics', shop);
       }
       console.log('[/api/auth/callback] store updated for', shop, 'with new token prefix:', accessToken?.slice(0, 10));
     }
@@ -279,6 +281,25 @@ router.get('/callback', async (req, res) => {
 // Health check for auth
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', auth: 'active' });
+});
+
+// GET /api/auth/reconnect?shop=xxx — Initiates OAuth re-installation for an existing store
+router.get('/reconnect', async (req, res) => {
+  const { shop } = req.query;
+  if (!shop) return res.status(400).json({ error: 'Shop required' });
+
+  const apiKey = process.env.SHOPIFY_API_KEY;
+  let appUrl = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
+  if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
+    appUrl = 'https://' + appUrl;
+  }
+  const redirectUri = `${appUrl}/api/auth/callback`;
+  const state = uuidv4();
+  const scopes = 'read_orders,read_products,read_analytics';
+
+  const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+  console.log('[/api/auth/reconnect] redirecting to:', authUrl);
+  res.redirect(authUrl);
 });
 
 export default router;
