@@ -148,8 +148,28 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
     setSelectedNodeId(newNode.id);
     setActiveStep(1);
     setNodeStyle({});
-    // Auto-open product picker for the new node (Bug 2 fix)
-    setTimeout(() => setShowProductPicker('offer'), 150);
+    // Auto-fetch first Shopify product and pre-populate the node
+    api.getShopifyProducts('', null, 1).then(data => {
+      if (data.products?.length > 0) {
+        const p = data.products[0];
+        const firstVariant = p.variants?.find(v => v.inventory_quantity > 0) || p.variants?.[0];
+        if (firstVariant) {
+          updateNode(newNode.id, {
+            product: {
+              product_id: String(p.id),
+              variant_id: String(firstVariant.id),
+              title: p.title,
+              variant_title: firstVariant.title,
+              original_price: firstVariant.price,
+              compare_at_price: firstVariant.compare_at_price || null,
+              image_url: firstVariant.image || p.image,
+              images: p.images,
+              description: p.description || '',
+            }
+          });
+        }
+      }
+    }).catch(() => { /* silently ignore — user can still pick manually */ });
   }
 
   function removeNode(nodeId) {
