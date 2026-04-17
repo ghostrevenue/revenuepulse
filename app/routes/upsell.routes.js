@@ -16,7 +16,12 @@ function verifyWebhook(req, res, next) {
   const secret = process.env.SHOPIFY_API_SECRET || '';
   const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   const hash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64');
-  if (hash !== hmacHeader) {
+  // Use timing-safe comparison to prevent timing attack vulnerabilities
+  try {
+    if (hash.length !== hmacHeader.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmacHeader))) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+  } catch (e) {
     return res.status(401).json({ error: 'Invalid webhook signature' });
   }
   req.shopDomain = shopDomain;
@@ -72,10 +77,12 @@ async function fetchShopifyOrder(shop, accessToken, orderId) {
   return data.order;
 }
 
-// ── GET /api/upsell/preview/:offerId ───────────────────────────────────────
+// ── GET /api/upsell/preview/:offerId ──────────────────────────────────────────
 // Public preview — no auth guard, returns offer as customer would see it
+// Authorization enforced via x-store-id header to prevent cross-store spying
 router.get('/preview/:offerId', async (req, res) => {
   const { offerId } = req.params;
+  const storeIdFromHeader = req.headers['x-store-id'];
   if (!offerId) return res.status(400).json({ error: 'offerId required' });
 
   await db.ensureReady();
@@ -88,6 +95,11 @@ router.get('/preview/:offerId', async (req, res) => {
   }
 
   if (!offer) return res.status(404).json({ error: 'Offer not found' });
+
+  // Authorization: if store ID header is provided, verify the offer belongs to this store
+  if (storeIdFromHeader && offer.store_id !== storeIdFromHeader) {
+    return res.status(403).json({ error: 'Forbidden: offer does not belong to this store' });
+  }
 
   // Get store info for shop domain
   let store;
@@ -704,9 +716,9 @@ router.post('/ab/create', verifyShop, async (req, res) => {
     // Create the A/B group
     if (db.usePostgres) {
       await db.prepare(`
-        INSERT INTO upsell_ab_groups (store_id, offer_ids, status)
-        VALUES ($1, $2, 'active')
-      `).run(req.store.id, [offer_id, variantBId]);
+        INSERT INTO upsell_ab_groups (id, store_id, offer_ids, status)
+        VALUES ($1, $2, $3, 'active')
+      `).run(groupId, req.store.id, [offer_id, variantBId]);
     } else {
       db.prepare(`
         INSERT INTO upsell_ab_groups (id, store_id, offer_ids, status)
@@ -723,6 +735,101 @@ router.post('/ab/create', verifyShop, async (req, res) => {
     });
   } catch (e) {
     console.error('[/ab/create]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── PUT /api/upsell/ab/:groupId ──────────────────────────────────────────────
+// Update A/B test (traffic split, pause/resume)
+router.put('/ab/:groupId', verifyShop, async (req, res) => {
+  const { groupId } = req.params;
+  const { traffic_split, status } = req.body;
+
+  await db.ensureReady();
+
+  let group;
+  if (db.usePostgres) {
+    group = await db.prepare('SELECT * FROM upsell_ab_groups WHERE id = $1 AND store_id = $2').get(groupId, req.store.id);
+  } else {
+    group = db.prepare('SELECT * FROM upsell_ab_groups WHERE id = ? AND store_id = ?').get(groupId, req.store.id);
+  }
+  if (!group) return res.status(404).json({ error: 'A/B test not found' });
+
+  try {
+    // Update traffic split on both variant offers
+    let offerIds;
+    try {
+      offerIds = db.usePostgres ? group.offer_ids : JSON.parse(group.offer_ids);
+    } catch { offerIds = []; }
+
+    if (typeof traffic_split === 'number' && offerIds.length >= 2) {
+      const splitA = traffic_split;
+      const splitB = 100 - traffic_split;
+      if (db.usePostgres) {
+        await db.prepare('UPDATE upsell_offers SET traffic_split = $1 WHERE id = $2').run(splitA, offerIds[0]);
+        await db.prepare('UPDATE upsell_offers SET traffic_split = $1 WHERE id = $2').run(splitB, offerIds[1]);
+      } else {
+        db.prepare('UPDATE upsell_offers SET traffic_split = ? WHERE id = ?').run(splitA, offerIds[0]);
+        db.prepare('UPDATE upsell_offers SET traffic_split = ? WHERE id = ?').run(splitB, offerIds[1]);
+      }
+    }
+
+    // Update group status
+    if (status && ['active', 'paused', 'completed'].includes(status)) {
+      if (db.usePostgres) {
+        await db.prepare('UPDATE upsell_ab_groups SET status = $1 WHERE id = $2').run(status, groupId);
+      } else {
+        db.prepare('UPDATE upsell_ab_groups SET status = ? WHERE id = ?').run(status, groupId);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[/ab/:groupId PUT]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── DELETE /api/upsell/ab/:groupId ──────────────────────────────────────────
+// Delete A/B test and its variant offers
+router.delete('/ab/:groupId', verifyShop, async (req, res) => {
+  const { groupId } = req.params;
+  await db.ensureReady();
+
+  let group;
+  if (db.usePostgres) {
+    group = await db.prepare('SELECT * FROM upsell_ab_groups WHERE id = $1 AND store_id = $2').get(groupId, req.store.id);
+  } else {
+    group = db.prepare('SELECT * FROM upsell_ab_groups WHERE id = ? AND store_id = ?').get(groupId, req.store.id);
+  }
+  if (!group) return res.status(404).json({ error: 'A/B test not found' });
+
+  try {
+    let offerIds;
+    try {
+      offerIds = db.usePostgres ? group.offer_ids : JSON.parse(group.offer_ids);
+    } catch { offerIds = []; }
+
+    // Delete variant offers
+    if (offerIds.length > 0) {
+      const placeholders = offerIds.map((_, i) => db.usePostgres ? `$${i + 1}` : '?').join(',');
+      if (db.usePostgres) {
+        await db.prepare(`DELETE FROM upsell_offers WHERE id IN (${placeholders})`).run(...offerIds);
+      } else {
+        db.prepare(`DELETE FROM upsell_offers WHERE id IN (${placeholders})`).run(...offerIds);
+      }
+    }
+
+    // Delete the group
+    if (db.usePostgres) {
+      await db.prepare('DELETE FROM upsell_ab_groups WHERE id = $1').run(groupId);
+    } else {
+      db.prepare('DELETE FROM upsell_ab_groups WHERE id = ?').run(groupId);
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[/ab/:groupId DELETE]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -911,7 +1018,10 @@ router.get('/check/:order_id', async (req, res) => {
     // First-time customer check
     if (offer.target_first_time_customer === 1) {
       const orderCount = customer?.orders_count || 0;
-      if (orderCount > 1) return false; // Not first-time if they have prior orders
+      // orders_count includes the current order (post-purchase check).
+      // First-time buyer: orders_count = 1 (current order only).
+      // Anyone with prior orders: orders_count > 1.
+      if (orderCount > 1) return false; // Has prior orders — exclude from first-time-only offer
     }
 
     // Customer tags check
@@ -1006,10 +1116,12 @@ router.post('/accept', async (req, res) => {
 
       // Step 2: Add line item
       const vid = variant_id || offer.upsell_product_id;
+      // Always parse to integer — database values are stored as strings
+      const variantIdInt = parseInt(vid, 10);
       const addRes = await fetch(`https://${shop}/admin/api/2024-01/orders/${order_id}/edits/${editId}/line_items.json`, {
         method: 'POST',
         headers: { 'X-Shopify-Access-Token': store.access_token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ line_item: { variant_id: parseInt(vid), quantity: quantity || 1 } })
+        body: JSON.stringify({ line_item: { variant_id: variantIdInt, quantity: quantity || 1 } })
       });
       if (!addRes.ok) {
         const err = await addRes.json().catch(() => ({}));

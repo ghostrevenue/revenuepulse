@@ -217,7 +217,7 @@ router.get('/ab-groups', verifyShop, async (req, res) => {
           ORDER BY g.created_at DESC
         `).all(req.store.id);
 
-    // For each group, fetch variant details
+    // For each group, fetch variant details — batched to avoid N+1 queries
     const enrichedGroups = await Promise.all((groups || []).map(async (group) => {
       let offerIds;
       try {
@@ -226,40 +226,49 @@ router.get('/ab-groups', verifyShop, async (req, res) => {
         offerIds = [];
       }
 
-      const variants = [];
-      for (const id of offerIds) {
-        let offer;
-        if (db.usePostgres) {
-          offer = await db.prepare('SELECT * FROM upsell_offers WHERE id = $1').get(id);
-        } else {
-          offer = db.prepare('SELECT * FROM upsell_offers WHERE id = ?').get(id);
+      if (!offerIds || offerIds.length === 0) {
+        return { ...group, variants: [] };
+      }
+
+      // Batch-fetch all offers for this group in a single query
+      let offers;
+      if (db.usePostgres) {
+        offers = await db.prepare(`SELECT * FROM upsell_offers WHERE id = ANY($1)`).all(offerIds);
+      } else {
+        const placeholders = offerIds.map(() => '?').join(',');
+        offers = db.prepare(`SELECT * FROM upsell_offers WHERE id IN (${placeholders})`).all(...offerIds);
+      }
+
+      // Batch-fetch all stats for this group's offers in a single query
+      let statsMap = {};
+      if (db.usePostgres) {
+        const stats = await db.prepare(`
+          SELECT offer_id, response, COUNT(*) as cnt FROM upsell_responses
+          WHERE offer_id = ANY($1) GROUP BY offer_id, response
+        `).all(offerIds);
+        for (const r of stats) {
+          if (!statsMap[r.offer_id]) statsMap[r.offer_id] = { accepts: 0, declines: 0 };
+          if (r.response === 'accepted') statsMap[r.offer_id].accepts = parseInt(r.cnt);
+          if (r.response === 'declined') statsMap[r.offer_id].declines = parseInt(r.cnt);
         }
-        if (offer) {
-          // Get per-variant stats
-          let accepts = 0;
-          let declines = 0;
-          if (db.usePostgres) {
-            const a = await db.prepare(`
-              SELECT response, COUNT(*) as cnt FROM upsell_responses
-              WHERE offer_id = $1 GROUP BY response
-            `).all(id);
-            for (const r of a) {
-              if (r.response === 'accepted') accepts = parseInt(r.cnt);
-              if (r.response === 'declined') declines = parseInt(r.cnt);
-            }
-          } else {
-            const rows = db.prepare(`
-              SELECT response, COUNT(*) as cnt FROM upsell_responses
-              WHERE offer_id = ? GROUP BY response
-            `).all(id);
-            for (const r of rows) {
-              if (r.response === 'accepted') accepts = parseInt(r.cnt);
-              if (r.response === 'declined') declines = parseInt(r.cnt);
-            }
-          }
-          variants.push({ ...offer, accepts, declines });
+      } else {
+        const placeholders = offerIds.map(() => '?').join(',');
+        const stats = db.prepare(`
+          SELECT offer_id, response, COUNT(*) as cnt FROM upsell_responses
+          WHERE offer_id IN (${placeholders}) GROUP BY offer_id, response
+        `).all(...offerIds);
+        for (const r of stats) {
+          if (!statsMap[r.offer_id]) statsMap[r.offer_id] = { accepts: 0, declines: 0 };
+          if (r.response === 'accepted') statsMap[r.offer_id].accepts = parseInt(r.cnt);
+          if (r.response === 'declined') statsMap[r.offer_id].declines = parseInt(r.cnt);
         }
       }
+
+      const variants = offers.map(offer => ({
+        ...offer,
+        accepts: statsMap[offer.id]?.accepts || 0,
+        declines: statsMap[offer.id]?.declines || 0,
+      }));
 
       return { ...group, variants };
     }));

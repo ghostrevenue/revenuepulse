@@ -121,6 +121,9 @@ export default function App() {
           try {
             const result = await api.verifySession(storeIdFromUrl);
             setStore(result.store);
+            // Persist storeId so it survives page refreshes
+            localStorage.setItem('storeId', storeIdFromUrl);
+            localStorage.setItem('store', JSON.stringify(result.store));
           } catch (e) {
             console.log('Session verification:', e.message);
           }
@@ -128,14 +131,38 @@ export default function App() {
           try {
             const result = await api.verifySession(null);
             setStore(result.store);
+            // Persist store data for subsequent page loads
+            if (result.store?.id) {
+              localStorage.setItem('storeId', result.store.id);
+              localStorage.setItem('store', JSON.stringify(result.store));
+            }
           } catch (e) {
             console.log('Session verification:', e.message);
           }
         } else {
-          try {
-            const result = await api.verifySession(null);
-            setStore(result.store);
-          } catch (e) {}
+          // Try to restore from localStorage (e.g., after page refresh)
+          const savedStoreId = localStorage.getItem('storeId');
+          const savedStore = localStorage.getItem('store');
+          if (savedStoreId && savedStore) {
+            try {
+              const result = await api.verifySession(savedStoreId);
+              setStore(result.store);
+              localStorage.setItem('store', JSON.stringify(result.store));
+            } catch (e) {
+              // Stored session is invalid — clear it
+              localStorage.removeItem('storeId');
+              localStorage.removeItem('store');
+            }
+          } else {
+            try {
+              const result = await api.verifySession(null);
+              setStore(result.store);
+              if (result.store?.id) {
+                localStorage.setItem('storeId', result.store.id);
+                localStorage.setItem('store', JSON.stringify(result.store));
+              }
+            } catch (e) {}
+          }
         }
       } catch (e) {
         console.error('Init error:', e.message);

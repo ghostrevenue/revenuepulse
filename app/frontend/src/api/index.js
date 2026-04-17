@@ -115,26 +115,26 @@ export const api = {
   getUpsellPreview: (offerId) => apiFetch(`/api/upsell/preview/${offerId}`),
 
   // --- A/B TESTING ---
-  // POST /api/upsell/offers/:id/clone — clone offer as variant B (creates A/B test)
-  cloneOfferForABTest: (offerId, data) => apiFetch(`/api/upsell/offers/${offerId}/clone`, {
+  // POST /api/upsell/ab/create — create A/B test (clone offer as variant B)
+  cloneOfferForABTest: (offerId, data) => apiFetch('/api/upsell/ab/create', {
     method: 'POST',
-    body: JSON.stringify(data)
+    body: JSON.stringify({ offerId, ...data })
   }),
 
-  // GET /api/upsell/ab-tests — list all active A/B tests
-  getABTests: () => apiFetch('/api/upsell/ab-tests'),
+  // GET /api/dashboard/ab-groups — list all active A/B test groups
+  getABTests: () => apiFetch('/api/dashboard/ab-groups'),
 
-  // PUT /api/upsell/ab-tests/:id — update A/B test (traffic split, pause, etc.)
-  updateABTest: (testId, data) => apiFetch(`/api/upsell/ab-tests/${testId}`, {
+  // PUT /api/upsell/ab/:groupId — update A/B test (traffic split, pause, etc.)
+  updateABTest: (testId, data) => apiFetch(`/api/upsell/ab/${testId}`, {
     method: 'PUT',
     body: JSON.stringify(data)
   }),
 
-  // DELETE /api/upsell/ab-tests/:id — delete/stop A/B test
-  deleteABTest: (testId) => apiFetch(`/api/upsell/ab-tests/${testId}`, { method: 'DELETE' }),
+  // DELETE /api/upsell/ab/:groupId — delete/stop A/B test
+  deleteABTest: (testId) => apiFetch(`/api/upsell/ab/${testId}`, { method: 'DELETE' }),
 
-  // GET /api/upsell/ab-tests/:id/results — get A/B test results
-  getABTestResults: (testId) => apiFetch(`/api/upsell/ab-tests/${testId}/results`),
+  // GET /api/upsell/ab/:groupId — get A/B test results
+  getABTestResults: (testId) => apiFetch(`/api/upsell/ab/${testId}`),
 
   // --- UPSELL STOREFRONT ---
   // GET /api/upsell/check/:order_id — check if order qualifies for upsell
