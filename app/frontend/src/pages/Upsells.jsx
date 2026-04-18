@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/index.js';
+import ProductPicker from '../components/ProductPicker.jsx';
+
+const INITIAL_FORM = {
+  offer_type: 'add_to_order',
+  trigger_threshold: '50',
+  target_product_id: '',
+  target_tags: '',
+  discount_code: '',
+  discount_percent: '',
+  message: '',
+  active: true
+};
 
 export default function Upsells({ store, appConfig }) {
   const [offers, setOffers] = useState([]);
@@ -8,16 +20,10 @@ export default function Upsells({ store, appConfig }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({
-    offer_type: 'add_to_order',
-    trigger_threshold: '50',
-    target_product_id: '',
-    target_tags: '',
-    discount_code: '',
-    discount_percent: '',
-    message: '',
-    active: true
-  });
+  const [form, setForm] = useState({ ...INITIAL_FORM });
+  const [formErrors, setFormErrors] = useState({});
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [selectedProductName, setSelectedProductName] = useState('');
 
   useEffect(() => {
     loadData();
@@ -40,8 +46,41 @@ export default function Upsells({ store, appConfig }) {
     }
   }
 
+  function resetForm() {
+    setForm({ ...INITIAL_FORM });
+    setFormErrors({});
+    setSelectedProductName('');
+  }
+
+  function handleProductSelect({ product, variant }) {
+    setForm({ ...form, target_product_id: product.id });
+    setSelectedProductName(product.title);
+    setShowProductPicker(false);
+    setFormErrors({ ...formErrors, target_product_id: null });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
+    const errors = {};
+
+    // Validate: if offer_type is 'add_to_order' and target_product_id is empty
+    if (form.offer_type === 'add_to_order' && !form.target_product_id) {
+      errors.target_product_id = 'Please select a product';
+    }
+
+    // Validate: if offer_type is 'discount_code' and discount_percent is empty or 0
+    if (form.offer_type === 'discount_code' && (!form.discount_percent || parseFloat(form.discount_percent) === 0)) {
+      errors.discount_percent = 'Please set a discount value';
+    }
+
+    // Set default message if empty
+    const messageToSend = form.message.trim() || 'Wait! Add this to your order';
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
     try {
       const payload = {
         offer_type: form.offer_type,
@@ -50,7 +89,7 @@ export default function Upsells({ store, appConfig }) {
         target_tags: form.target_tags || null,
         discount_code: form.discount_code || null,
         discount_percent: form.discount_percent ? parseFloat(form.discount_percent) : null,
-        message: form.message || null,
+        message: messageToSend,
         active: form.active
       };
 
@@ -61,7 +100,7 @@ export default function Upsells({ store, appConfig }) {
       }
       setShowForm(false);
       setEditing(null);
-      setForm({ offer_type: 'add_to_order', trigger_threshold: '50', target_product_id: '', target_tags: '', discount_code: '', discount_percent: '', message: '', active: true });
+      resetForm();
       loadData();
     } catch (e) {
       alert('Error saving offer: ' + e.message);
@@ -80,6 +119,9 @@ export default function Upsells({ store, appConfig }) {
       message: offer.message || '',
       active: !!offer.active
     });
+    // If offer has a product_id, try to show a name (we store the id only in this form)
+    setSelectedProductName(offer.target_product_id ? `Product ID: ${offer.target_product_id}` : '');
+    setFormErrors({});
     setShowForm(true);
   }
 
@@ -162,11 +204,21 @@ export default function Upsells({ store, appConfig }) {
                 <small>Offer triggers for orders at or above this value</small>
               </div>
 
-              <div className="form-group">
-                <label>Target Product IDs (comma-separated)</label>
-                <input type="text" value={form.target_product_id} onChange={e => setForm({ ...form, target_product_id: e.target.value })} placeholder="1234567890, 9876543210" />
-                <small>Trigger only for orders containing these product IDs</small>
-              </div>
+              {form.offer_type === 'add_to_order' && (
+                <div className="form-group">
+                  <label>Target Product</label>
+                  <button type="button" className="btn-secondary" onClick={() => setShowProductPicker(true)}>
+                    {selectedProductName ? 'Change Product' : 'Select Product'}
+                  </button>
+                  {selectedProductName && (
+                    <div className="selected-product-row">
+                      <span className="selected-product-name">{selectedProductName}</span>
+                    </div>
+                  )}
+                  {formErrors.target_product_id && <span className="inline-error">{formErrors.target_product_id}</span>}
+                  <small>Select the product to offer as an upsell</small>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Target Tags (comma-separated)</label>
@@ -183,6 +235,7 @@ export default function Upsells({ store, appConfig }) {
                   <div className="form-group">
                     <label>Discount Percent (%)</label>
                     <input type="number" value={form.discount_percent} onChange={e => setForm({ ...form, discount_percent: e.target.value })} placeholder="10" />
+                    {formErrors.discount_percent && <span className="inline-error">{formErrors.discount_percent}</span>}
                   </div>
                 </>
               )}
@@ -205,6 +258,11 @@ export default function Upsells({ store, appConfig }) {
                 <button type="submit" className="btn-primary">{editing ? 'Update Offer' : 'Create Offer'}</button>
               </div>
             </form>
+            <ProductPicker
+              isOpen={showProductPicker}
+              onClose={() => setShowProductPicker(false)}
+              onSelect={handleProductSelect}
+            />
           </div>
         </div>
       )}
@@ -337,6 +395,9 @@ export default function Upsells({ store, appConfig }) {
         .data-table tr:last-child td { border-bottom: none; }
         .empty-state { text-align: center; padding: 40px; color: #666; }
         .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: #666; }
+        .inline-error { display: block; color: #c00; font-size: 13px; margin-top: 6px; font-weight: 500; }
+        .selected-product-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 10px 12px; background: #e8f5e9; border-radius: 6px; border: 1px solid #c8e6c9; }
+        .selected-product-name { font-size: 14px; font-weight: 600; color: #0a8754; }
       `}</style>
     </div>
   );
