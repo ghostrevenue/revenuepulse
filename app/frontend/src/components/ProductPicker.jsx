@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api/index.js';
 
-// Session cache (kept for future use)
-const productCache = {};
-
 const SAMPLE_PRODUCTS = [
   {
     id: 'gid://shopify/Product/1',
@@ -139,7 +136,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
 
   function handleMultiConfirm() {
     const selectedProducts = (useSample ? sampleSearchResults : products).filter(p => selectedProductIds.has(p.id));
-    onSelect(selectedProducts);
+    onSelect(selectedProducts.map(p => ({ product: p, variant: p.variants?.[0] })));
     onClose();
   }
 
@@ -187,6 +184,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
         .pp-variant { display: flex; align-items: center; gap: 16px; padding: 12px 20px; cursor: pointer; transition: background 0.1s; }
         .pp-variant:hover { background: #0f0f14; }
         .pp-variant.out-of-stock { opacity: 0.4; cursor: not-allowed; }
+        .pp-variant.selected { background: #1a1a2e; border: 2px solid #8b5cf6; border-radius: 8px; }
         .pp-var-info { flex: 1; }
         .pp-var-title { font-size: 14px; font-weight: 500; color: #fafafa; }
         .pp-var-sku { font-size: 11px; color: #52525b; margin-top: 2px; }
@@ -281,7 +279,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
               {/* Load more */}
               {pageInfo?.hasNextPage && (
                 <div className="pp-load-more">
-                  <button onClick={() => loadProducts(search, pageInfo.endCursor)}>Load more</button>
+                  <button onClick={() => loadProducts(search, pageInfo.endCursor)} disabled={loading}>{loading ? 'Loading...' : 'Load more'}</button>
                 </div>
               )}
             </>
@@ -301,7 +299,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
                 {(selectedProduct.variants || []).map(v => (
                   <div
                     key={v.id}
-                    className={`pp-variant ${v.inventory_quantity === 0 ? 'out-of-stock' : ''}`}
+                    className={`pp-variant ${v.inventory_quantity === 0 ? 'out-of-stock' : ''} ${v.id === selectedVariantId ? 'selected' : ''}`}
                     onClick={() => v.inventory_quantity !== 0 && handleVariantSelect(v)}
                   >
                     <div className="pp-var-info">

@@ -8,6 +8,7 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
   const [status, setStatus] = useState('idle'); // idle | accepting | accepted | declining | declined
   const [loading, setLoading] = useState(true);
   const [orderId] = useState('PREVIEW-ORDER');
+  const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
   // Deterministic social-proof count — derived from order ID so it never changes
   // on re-renders. In production this comes from the API; for preview, use a
@@ -22,9 +23,25 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
   }
   const socialProofCount = hashOrderToCount(orderId);
 
+  // Format seconds as MM:SS
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
   useEffect(() => {
     loadPreviewOffer();
   }, []);
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (status !== 'idle' || countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [status, countdown]);
 
   async function loadPreviewOffer() {
     try {
@@ -286,7 +303,7 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
               </div>
               <div className="discount-offer-content">
                 <div className="product-headline">{offer?.headline || 'Special discount just for you!'}</div>
-                <div className="product-message">{offer?.message || 'Get {discount}% off your next order.'}</div>
+                <div className="product-message">{offer?.message || `Get ${offer?.discount_percent || 15}% off your next order.`}</div>
                 <div className="discount-code-display">{offer?.discount_code || 'SAVE15'} — {offer?.discount_percent || 15}% OFF</div>
               </div>
             </div>
@@ -349,7 +366,7 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
-          This offer ends when you leave this page
+          {countdown > 0 ? `Offer expires in ${formatTime(countdown)}` : 'Offer expired'}
         </div>
 
         {/* Trust footer */}
@@ -411,8 +428,8 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
         .btn-loading { display: flex; align-items: center; gap: 10px; }
         .btn-spinner { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .btn-decline { background: none; border: none; color: #9ca3af; font-size: 14px; cursor: pointer; padding: 12px; text-align: center; transition: color 0.15s; min-height: 44px; }
-        .btn-decline:hover { color: #6b7280; }
+        .btn-decline { background: none; border: none; color: #374151; font-size: 14px; cursor: pointer; padding: 12px; text-align: center; transition: color 0.15s; min-height: 44px; }
+        .btn-decline:hover { color: #1f2937; }
         .btn-decline:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Trust indicators */

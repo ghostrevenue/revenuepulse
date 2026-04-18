@@ -13,11 +13,15 @@ export default function Settings({ store, appConfig }) {
     try { return JSON.parse(localStorage.getItem('rp_notifications') || '{}'); }
     catch { return {}; }
   });
+  const [notifSaved, setNotifSaved] = useState(false);
 
   function toggleNotification(key) {
     const updated = { ...notifications, [key]: !notifications[key] };
     setNotifications(updated);
     localStorage.setItem('rp_notifications', JSON.stringify(updated));
+    api.saveNotificationPrefs(updated).catch(e => console.warn('Notif save failed:', e.message));
+    setNotifSaved(true);
+    setTimeout(() => setNotifSaved(false), 2000);
   }
 
   // Danger zone
@@ -68,12 +72,12 @@ export default function Settings({ store, appConfig }) {
     load();
   }, [store]);
 
-  // Fallback plans for when API fails (array format matching API response)
-  const PLANS = [
-    { name: 'Starter', price: 19, planKey: 'starter', features: ['5 active offers', 'Basic analytics', 'Email support'] },
-    { name: 'Growth', price: 49, planKey: 'growth', features: ['Unlimited offers', 'A/B testing', 'Priority support', 'Custom branding'] },
-    { name: 'Pro', price: 99, planKey: 'pro', features: ['Everything in Growth', 'Dedicated account manager', 'Custom integrations', 'SLA guarantee'] },
-  ];
+  // Fallback plans for when API fails (object keyed by planKey matching API response)
+  const PLANS = {
+    starter: { name: 'Starter', price: 19, planKey: 'starter', features: ['5 active offers', 'Basic analytics', 'Email support'] },
+    growth: { name: 'Growth', price: 49, planKey: 'growth', features: ['Unlimited offers', 'A/B testing', 'Priority support', 'Custom branding'] },
+    pro: { name: 'Pro', price: 99, planKey: 'pro', features: ['Everything in Growth', 'Dedicated account manager', 'Custom integrations', 'SLA guarantee'] },
+  };
 
   async function handleSubscribe(planKey) {
     if (!store) return;
