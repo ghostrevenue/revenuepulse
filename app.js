@@ -122,7 +122,7 @@ app.get('/health', (req, res) => {
 app.get('/debug/env', (req, res) => {
   const safe = ['NODE_ENV', 'APP_URL', 'APP_PORT', 'DATABASE_URL', 'SHOPIFY_API_KEY',
     'HOST', 'PORT', 'RAILWAY', 'RAILWAY_PROJECT_ID',
-    'RAILWAY_SERVICE_NAME', 'RAILWAY_GIT_COMMIT_SHA', 'DATABASE_REPLICA_URL'];
+    'RAILWAY_SERVICE_NAME', 'RAILWAY_GIT_COMMIT_SHA', 'DATABASE_REPLICA_URL', 'RAILWAY_TOKEN'];
   const env = {};
   safe.forEach(k => { if (process.env[k]) env[k] = process.env[k]; });
   res.json({ env, keys_found: Object.keys(env) });
