@@ -45,5 +45,16 @@ export const StoreModel = {
     }
     return db.prepare('UPDATE stores SET access_token = ?, refresh_token = ? WHERE shop = ?')
       .run(accessToken, refreshToken, shop);
+  },
+
+  async update(id, fields) {
+    // fields: { is_active?: boolean, uninstalled_at?: string, ... }
+    const keys = Object.keys(fields);
+    const setClause = keys.map((k, i) => `${k} = ${db.usePostgres ? `$${i + 1}` : '?'}`).join(', ');
+    const values = [...keys.map(k => fields[k]), id];
+    if (db.usePostgres) {
+      return db.query(`UPDATE stores SET ${setClause} WHERE id = $${values.length}`, values);
+    }
+    return db.prepare(`UPDATE stores SET ${setClause} WHERE id = ?`).run(...values);
   }
 };

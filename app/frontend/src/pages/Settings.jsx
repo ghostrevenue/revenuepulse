@@ -8,6 +8,36 @@ export default function Settings({ store, appConfig }) {
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // Notification preferences (localStorage — no backend needed yet)
+  const [notifications, setNotifications] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('rp_notifications') || '{}'); }
+    catch { return {}; }
+  });
+
+  function toggleNotification(key) {
+    const updated = { ...notifications, [key]: !notifications[key] };
+    setNotifications(updated);
+    localStorage.setItem('rp_notifications', JSON.stringify(updated));
+  }
+
+  // Danger zone
+  const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
+  const [uninstallMsg, setUninstallMsg] = useState(null);
+
+  async function handleUninstall() {
+    setUninstalling(true);
+    setUninstallMsg(null);
+    try {
+      await api.uninstallApp();
+      setUninstallMsg({ type: 'success', text: 'App uninstalled. Redirecting...' });
+      setTimeout(() => { window.location.href = '/'; }, 2000);
+    } catch (e) {
+      setUninstallMsg({ type: 'error', text: e.message || 'Uninstall failed. Try again.' });
+      setUninstalling(false);
+    }
+  }
+
   useEffect(() => {
     if (!store) { setLoading(false); return; }
     async function load() {
@@ -166,6 +196,66 @@ export default function Settings({ store, appConfig }) {
         </div>
       </div>
 
+      {/* Notification Preferences */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">Notification Preferences</div>
+        </div>
+        <div className="notif-list">
+          {[
+            { key: 'email_upsells', label: 'New upsell accepted', desc: 'Get notified when a customer accepts an upsell offer' },
+            { key: 'email_milestones', label: 'Revenue milestones', desc: 'Get notified when you hit revenue milestones' },
+            { key: 'email_errors', label: 'App errors', desc: 'Get notified when the app encounters an error' },
+            { key: 'email_weekly', label: 'Weekly summary', desc: 'Receive a weekly email summarizing your upsell performance' },
+          ].map(({ key, label, desc }) => (
+            <div key={key} className="notif-row">
+              <div className="notif-info">
+                <div className="notif-label">{label}</div>
+                <div className="notif-desc">{desc}</div>
+              </div>
+              <button
+                className={`toggle ${notifications[key] !== false ? 'on' : 'off'}`}
+                onClick={() => toggleNotification(key)}
+                aria-label={`Toggle ${label}`}
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="card danger-card">
+        <div className="card-header">
+          <div className="card-title danger-title">Danger Zone</div>
+        </div>
+        <div className="danger-row">
+          <div className="danger-info">
+            <div className="danger-label">Uninstall RevenuePulse</div>
+            <div className="danger-desc">This will remove all upsell funnels and disconnect the app from your Shopify store. This action cannot be undone.</div>
+          </div>
+          {!showUninstallConfirm ? (
+            <button className="btn-danger-outline" onClick={() => setShowUninstallConfirm(true)}>
+              Uninstall App
+            </button>
+          ) : (
+            <div className="uninstall-confirm">
+              <p className="confirm-text">Are you sure? This will delete all your data.</p>
+              <div className="confirm-actions">
+                <button className="btn-danger" onClick={handleUninstall} disabled={uninstalling}>
+                  {uninstalling ? 'Uninstalling...' : 'Yes, Uninstall'}
+                </button>
+                <button className="btn-cancel" onClick={() => { setShowUninstallConfirm(false); setUninstallMsg(null); }} disabled={uninstalling}>
+                  Cancel
+                </button>
+              </div>
+              {uninstallMsg && <div className={`alert-banner ${uninstallMsg.type}`}>{uninstallMsg.text}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
       <style>{`
         .settings { max-width: 900px; }
         .page-header { margin-bottom: 32px; }
@@ -212,6 +302,41 @@ export default function Settings({ store, appConfig }) {
           .plans-grid { grid-template-columns: 1fr; }
           .info-grid { grid-template-columns: 1fr; }
         }
+
+        /* Notification preferences */
+        .notif-list { display: flex; flex-direction: column; gap: 0; }
+        .notif-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #27272a; }
+        .notif-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .notif-row:first-child { padding-top: 0; }
+        .notif-info { flex: 1; }
+        .notif-label { font-size: 14px; font-weight: 500; color: #e5e5e5; }
+        .notif-desc { font-size: 13px; color: #71717a; margin-top: 2px; }
+
+        /* Toggle switch */
+        .toggle { width: 42px; height: 24px; border-radius: 12px; border: none; cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0; }
+        .toggle.on { background: #8b5cf6; }
+        .toggle.off { background: #3f3f46; }
+        .toggle-knob { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.2s; }
+        .toggle.on .toggle-knob { left: 21px; }
+
+        /* Danger zone */
+        .danger-card { border-color: rgba(239,68,68,0.25); }
+        .danger-title { color: #ef4444 !important; }
+        .danger-row { display: flex; align-items: flex-start; gap: 24px; }
+        .danger-info { flex: 1; }
+        .danger-label { font-size: 14px; font-weight: 600; color: #fafafa; }
+        .danger-desc { font-size: 13px; color: #71717a; margin-top: 4px; line-height: 1.5; }
+        .btn-danger-outline { padding: 8px 18px; border: 1px solid rgba(239,68,68,0.4); color: #ef4444; background: transparent; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .btn-danger-outline:hover { background: rgba(239,68,68,0.1); }
+        .uninstall-confirm { display: flex; flex-direction: column; gap: 10px; }
+        .confirm-text { font-size: 13px; color: #fafafa; margin: 0; }
+        .confirm-actions { display: flex; gap: 8px; }
+        .btn-danger { padding: 8px 18px; background: #ef4444; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-cancel { padding: 8px 18px; background: #27272a; color: #a1a1aa; border: 1px solid #3f3f46; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .btn-cancel:hover { background: #3f3f46; color: #fafafa; }
+        .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </div>
   );

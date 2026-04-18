@@ -89,6 +89,20 @@ router.get('/plans', (req, res) => {
   res.json({ plans: PLANS });
 });
 
+// DELETE /api/billing/uninstall — uninstall the app from the store
+router.delete('/uninstall', verifySession, async (req, res) => {
+  try {
+    // Delete billing record
+    await BillingModel.delete(req.store.id);
+    // Mark store as uninstalled
+    await StoreModel.update(req.store.id, { is_active: false, uninstalled_at: new Date().toISOString() });
+    res.json({ success: true, message: 'App uninstalled successfully' });
+  } catch (e) {
+    console.error('[/billing/uninstall]', e.message);
+    res.status(500).json({ error: 'Uninstall failed' });
+  }
+});
+
 function getAppUrl() {
   let url = process.env.APP_URL || 'https://revenuepulse-production.up.railway.app';
   if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;

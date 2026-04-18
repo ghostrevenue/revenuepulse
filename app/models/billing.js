@@ -28,5 +28,12 @@ export const BillingModel = {
         status = excluded.status,
         updated_at = CURRENT_TIMESTAMP
     `).run(storeId, plan, status);
+  },
+
+  async delete(storeId) {
+    if (db.usePostgres) {
+      return db.query('DELETE FROM billing WHERE store_id = $1', [storeId]);
+    }
+    return db.prepare('DELETE FROM billing WHERE store_id = ?').run(storeId);
   }
 };

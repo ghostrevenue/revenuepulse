@@ -172,6 +172,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ plan })
   }),
+  uninstallApp: () => apiFetch('/api/billing/uninstall', { method: 'DELETE' }),
 
   // --- SHOPIFY STORE DATA (for targeting selectors) ---
   // GET /api/shopify/products/search?query=search&limit=50

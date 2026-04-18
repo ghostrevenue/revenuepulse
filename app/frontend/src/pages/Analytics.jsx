@@ -364,13 +364,37 @@ export default function Analytics({ store, appConfig }) {
   const [dateRange, setDateRange] = useState('30'); // '7' | '30' | '90'
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const tableRef = useRef(null);
+  const [chartData, setChartData] = useState(null);
+  const [offersData, setOffersData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
-  // TODO: wire to GET /api/analytics/funnel/:id when backend is ready
+  // Fetch real analytics data from API
   useEffect(() => {
-    // fetch(`/api/analytics/funnel/${funnelId}`)
-    //   .then(r => r.json())
-    //   .then(data => { setFunnel(data.funnel); setMetrics(data.metrics); })
-  }, []);
+    if (!store) return;
+    setAnalyticsLoading(true);
+    Promise.all([
+      api.getAnalyticsChart(dateRange).catch(() => null),
+      api.getAnalyticsOffers(dateRange).catch(() => null),
+    ]).then(([chart, offers]) => {
+      setChartData(chart);
+      setOffersData(offers);
+    }).finally(() => setAnalyticsLoading(false));
+  }, [store, dateRange]);
+
+  // CSV export
+  function handleExportCSV() {
+    if (!offersData?.offers) return;
+    const rows = [['Offer Name', 'Type', 'Status', 'Triggered', 'Accepted', 'Declined', 'Accept Rate', 'Revenue']];
+    offersData.offers.forEach(o => {
+      const rate = o.total_triggered > 0 ? ((o.total_accepted / o.total_triggered) * 100).toFixed(1) : '0.0';
+      rows.push([o.name, o.offer_type, o.status, o.total_triggered, o.total_accepted, o.total_declined, rate + '%', '$' + o.revenue_lifted.toFixed(2)]);
+    });
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `revenuepulse-analytics-${dateRange}d.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   if (!store) {
     return (
@@ -384,12 +408,19 @@ export default function Analytics({ store, appConfig }) {
   // Determine if we have funnel data (mock: always has funnel for now)
   const hasFunnel = mockFunnel && mockFunnel.nodes && mockFunnel.nodes.length > 0;
 
-  // Compute aggregate stats
-  const impressions = mockMetrics.impressions;
-  const accepts = mockMetrics.accepts;
-  const declines = mockMetrics.declines;
+  // Compute aggregate stats — prefer real API data when available
+  const realOffers = offersData?.offers || [];
+  const realImpressions = realOffers.reduce((s, o) => s + (o.total_triggered || 0), 0);
+  const realAccepts = realOffers.reduce((s, o) => s + (o.total_accepted || 0), 0);
+  const realDeclines = realOffers.reduce((s, o) => s + (o.total_declined || 0), 0);
+  const realRevenue = realOffers.reduce((s, o) => s + (o.revenue_lifted || 0), 0);
+  const hasRealData = realImpressions > 0 || realRevenue > 0;
+
+  const impressions = hasRealData ? realImpressions : mockMetrics.impressions;
+  const accepts = hasRealData ? realAccepts : mockMetrics.accepts;
+  const declines = hasRealData ? realDeclines : mockMetrics.declines;
+  const revenue = hasRealData ? realRevenue : mockMetrics.revenue;
   const acceptRate = impressions > 0 ? ((accepts / impressions) * 100).toFixed(1) : '0.0';
-  const revenue = mockMetrics.revenue;
   const aovLift = mockMetrics.avgOrderValue > 0 && mockMetrics.baselineAOV > 0
     ? (((mockMetrics.avgOrderValue / mockMetrics.baselineAOV) - 1) * 100).toFixed(1)
     : '0.0';
@@ -421,10 +452,23 @@ export default function Analytics({ store, appConfig }) {
           <h1 className="page-title">Analytics</h1>
           <p className="page-subtitle">{store?.shop} — Upsell funnel performance</p>
         </div>
-        <div className="date-range-toggle">
-          <button className={`range-btn ${dateRange === '7' ? 'active' : ''}`} onClick={() => setDateRange('7')}>Last 7 days</button>
-          <button className={`range-btn ${dateRange === '30' ? 'active' : ''}`} onClick={() => setDateRange('30')}>Last 30 days</button>
-          <button className={`range-btn ${dateRange === '90' ? 'active' : ''}`} onClick={() => setDateRange('90')}>Last 90 days</button>
+        <div className="analytics-header-actions">
+          <button
+            className="btn-export"
+            onClick={handleExportCSV}
+            disabled={analyticsLoading || !offersData?.offers?.length}
+            title="Export offer performance to CSV"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export CSV
+          </button>
+          <div className="date-range-toggle">
+            <button className={`range-btn ${dateRange === '7' ? 'active' : ''}`} onClick={() => setDateRange('7')}>Last 7 days</button>
+            <button className={`range-btn ${dateRange === '30' ? 'active' : ''}`} onClick={() => setDateRange('30')}>Last 30 days</button>
+            <button className={`range-btn ${dateRange === '90' ? 'active' : ''}`} onClick={() => setDateRange('90')}>Last 90 days</button>
+          </div>
         </div>
       </div>
 
@@ -500,6 +544,17 @@ export default function Analytics({ store, appConfig }) {
         .page-subtitle { color: #71717a; font-size: 14px; margin: 0; }
 
         /* Date range toggle */
+        .analytics-header-actions { display: flex; gap: 10px; align-items: center; }
+
+        .btn-export {
+          display: flex; align-items: center; gap: 6px;
+          background: #18181b; border: 1px solid #27272a; color: #a1a1aa;
+          padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+          cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        }
+        .btn-export:hover { background: #27272a; color: #fafafa; }
+        .btn-export:disabled { opacity: 0.4; cursor: not-allowed; }
+
         .date-range-toggle {
           display: flex;
           gap: 4px;
