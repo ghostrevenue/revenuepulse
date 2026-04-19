@@ -166,6 +166,19 @@ export const api = {
     body: JSON.stringify(prefs),
   }),
 
+  // --- FUNNELS ---
+  getFunnels: () => apiFetch('/api/funnels'),
+  getFunnel: (id) => apiFetch(`/api/funnels/${id}`),
+  createFunnel: (data) => apiFetch('/api/funnels', {
+    method: 'POST',
+    body: JSON.stringify({ name: data.name, trigger: data.trigger, nodes: data.nodes }),
+  }),
+  updateFunnel: (id, data) => apiFetch(`/api/funnels/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name: data.name, status: data.status, trigger: data.trigger, nodes: data.nodes }),
+  }),
+  deleteFunnel: (id) => apiFetch(`/api/funnels/${id}`, { method: 'DELETE' }),
+
   // --- SHOPIFY STORE DATA ---
   searchShopifyProducts: (query = '', limit = 50) =>
     apiFetch(`/api/shopify/products/search?query=${encodeURIComponent(query)}&limit=${limit}`),

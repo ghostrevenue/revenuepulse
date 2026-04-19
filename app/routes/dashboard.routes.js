@@ -28,12 +28,12 @@ router.get('/stats', verifyShop, async (req, res) => {
 
     // Get totals per response type
     const totals = db.usePostgres
-      ? await db.prepare(`
+      ? (await db.query(`
           SELECT response, COUNT(*) as count
           FROM upsell_responses
           WHERE store_id = $1 AND response IN ('accepted', 'declined')
           GROUP BY response
-        `).all(storeId)
+        `, [storeId])).rows
       : db.prepare(`
           SELECT response, COUNT(*) as count
           FROM upsell_responses
@@ -51,14 +51,17 @@ router.get('/stats', verifyShop, async (req, res) => {
     const total = accepts + declines;
     const acceptanceRate = total > 0 ? Math.round((accepts / total) * 10000) / 100 : 0;
 
+    // Total triggered (accepted + declined)
+    const totalTriggered = accepts + declines;
+
     // Total revenue lifted (sum of added_revenue from all accepted offers)
     let totalRevenueLifted = 0;
     if (db.usePostgres) {
-      const rows = await db.prepare(`
+      const rows = (await db.query(`
         SELECT COALESCE(SUM(added_revenue), 0) as total
         FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted'
-      `).all(storeId);
+      `, [storeId])).rows;
       totalRevenueLifted = parseFloat(rows[0]?.total || 0);
     } else {
       const row = db.prepare(`
@@ -68,6 +71,42 @@ router.get('/stats', verifyShop, async (req, res) => {
       `).get(storeId);
       totalRevenueLifted = parseFloat(row?.total || 0);
     }
+
+    // Calculate week-over-week trends
+    let revenueLiftedTrend = 0, acceptsTrend = 0, declinesTrend = 0, rateTrend = 0, triggeredTrend = 0;
+    try {
+      const lastWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 7).toISOString();
+      const thisWeekRevenue = db.usePostgres
+        ? (await db.query(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2`, [storeId, weekStart])).rows[0]?.total || 0
+        : db.prepare(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = ? AND response = 'accepted' AND created_at >= ?`).get(storeId, weekStart)?.total || 0;
+      const lastWeekRevenue = db.usePostgres
+        ? (await db.query(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2`, [storeId, lastWeekStart])).rows[0]?.total || 0
+        : db.prepare(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = ? AND response = 'accepted' AND created_at >= ?`).get(storeId, lastWeekStart)?.total || 0;
+      revenueLiftedTrend = lastWeekRevenue > 0 ? Math.round(((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100) : 0;
+
+      const thisWeekAccepts = db.usePostgres
+        ? (await db.query(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2`, [storeId, weekStart])).rows[0]?.cnt || 0
+        : db.prepare(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = ? AND response = 'accepted' AND created_at >= ?`).get(storeId, weekStart)?.cnt || 0;
+      const lastWeekAccepts = db.usePostgres
+        ? (await db.query(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2`, [storeId, lastWeekStart])).rows[0]?.cnt || 0
+        : db.prepare(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = ? AND response = 'accepted' AND created_at >= ?`).get(storeId, lastWeekStart)?.cnt || 0;
+      acceptsTrend = lastWeekAccepts > 0 ? Math.round(((parseInt(thisWeekAccepts) - parseInt(lastWeekAccepts)) / parseInt(lastWeekAccepts)) * 100) : 0;
+
+      const thisWeekDeclines = db.usePostgres
+        ? (await db.query(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = $1 AND response = 'declined' AND created_at >= $2`, [storeId, weekStart])).rows[0]?.cnt || 0
+        : db.prepare(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = ? AND response = 'declined' AND created_at >= ?`).get(storeId, weekStart)?.cnt || 0;
+      const lastWeekDeclines = db.usePostgres
+        ? (await db.query(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = $1 AND response = 'declined' AND created_at >= $2`, [storeId, lastWeekStart])).rows[0]?.cnt || 0
+        : db.prepare(`SELECT COUNT(*) as cnt FROM upsell_responses WHERE store_id = ? AND response = 'declined' AND created_at >= ?`).get(storeId, lastWeekStart)?.cnt || 0;
+      declinesTrend = lastWeekDeclines > 0 ? Math.round(((parseInt(thisWeekDeclines) - parseInt(lastWeekDeclines)) / parseInt(lastWeekDeclines)) * 100) : 0;
+
+      const thisWeekTotal = parseInt(thisWeekAccepts) + parseInt(thisWeekDeclines);
+      const lastWeekTotal = parseInt(lastWeekAccepts) + parseInt(lastWeekDeclines);
+      const thisWeekRate = thisWeekTotal > 0 ? (parseInt(thisWeekAccepts) / thisWeekTotal) * 100 : 0;
+      const lastWeekRate = lastWeekTotal > 0 ? (parseInt(lastWeekAccepts) / lastWeekTotal) * 100 : 0;
+      rateTrend = lastWeekRate > 0 ? Math.round(((thisWeekRate - lastWeekRate) / lastWeekRate) * 100) : 0;
+      triggeredTrend = lastWeekTotal > 0 ? Math.round(((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100) : 0;
+    } catch (e) { /* trends are optional */ }
 
     // Revenue per accept (average added_revenue per accepted offer)
     const revenuePerAccept = accepts > 0 ? Math.round((totalRevenueLifted / accepts) * 100) / 100 : 0;
@@ -85,11 +124,11 @@ router.get('/stats', verifyShop, async (req, res) => {
     // Accepts today
     let acceptsToday = 0;
     if (db.usePostgres) {
-      const r = await db.prepare(`
+      const r = await db.query(`
         SELECT COUNT(*) as cnt FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
-      `).all(storeId, todayStart);
-      acceptsToday = parseInt(r[0]?.cnt || 0);
+      `, [storeId, todayStart]);
+      acceptsToday = parseInt(r.rows[0]?.cnt || 0);
     } else {
       const r = db.prepare(`
         SELECT COUNT(*) as cnt FROM upsell_responses
@@ -101,11 +140,11 @@ router.get('/stats', verifyShop, async (req, res) => {
     // Accepts this week
     let acceptsThisWeek = 0;
     if (db.usePostgres) {
-      const r = await db.prepare(`
+      const r = await db.query(`
         SELECT COUNT(*) as cnt FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
-      `).all(storeId, weekStart);
-      acceptsThisWeek = parseInt(r[0]?.cnt || 0);
+      `, [storeId, weekStart]);
+      acceptsThisWeek = parseInt(r.rows[0]?.cnt || 0);
     } else {
       const r = db.prepare(`
         SELECT COUNT(*) as cnt FROM upsell_responses
@@ -117,11 +156,11 @@ router.get('/stats', verifyShop, async (req, res) => {
     // Accepts this month
     let acceptsThisMonth = 0;
     if (db.usePostgres) {
-      const r = await db.prepare(`
+      const r = await db.query(`
         SELECT COUNT(*) as cnt FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
-      `).all(storeId, monthStart);
-      acceptsThisMonth = parseInt(r[0]?.cnt || 0);
+      `, [storeId, monthStart]);
+      acceptsThisMonth = parseInt(r.rows[0]?.cnt || 0);
     } else {
       const r = db.prepare(`
         SELECT COUNT(*) as cnt FROM upsell_responses
@@ -133,11 +172,11 @@ router.get('/stats', verifyShop, async (req, res) => {
     // Revenue today
     let revenueToday = 0;
     if (db.usePostgres) {
-      const r = await db.prepare(`
+      const r = await db.query(`
         SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses
         WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2
-      `).all(storeId, todayStart);
-      revenueToday = parseFloat(r[0]?.total || 0);
+      `, [storeId, todayStart]);
+      revenueToday = parseFloat(r.rows[0]?.total || 0);
     } else {
       const r = db.prepare(`
         SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses
@@ -149,6 +188,7 @@ router.get('/stats', verifyShop, async (req, res) => {
     res.json({
       accepts,
       declines,
+      total_triggered: totalTriggered,
       total_responses: total,
       acceptance_rate: acceptanceRate,
       total_revenue_lifted: Math.round(totalRevenueLifted * 100) / 100,
@@ -158,7 +198,12 @@ router.get('/stats', verifyShop, async (req, res) => {
       accepts_this_week: acceptsThisWeek,
       accepts_this_month: acceptsThisMonth,
       revenue_today: Math.round(revenueToday * 100) / 100,
-      store_id: storeId
+      store_id: storeId,
+      revenue_lifted_trend: revenueLiftedTrend,
+      accepts_trend: acceptsTrend,
+      declines_trend: declinesTrend,
+      rate_trend: rateTrend,
+      triggered_trend: triggeredTrend,
     });
   } catch (e) {
     console.error('[/dashboard/stats]', e.message);
@@ -172,7 +217,7 @@ router.get('/recent', verifyShop, async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
   try {
     const responses = db.usePostgres
-      ? await db.prepare(`
+      ? (await db.query(`
           SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at, r.added_revenue,
                  o.offer_type, o.headline, o.message
           FROM upsell_responses r
@@ -180,7 +225,7 @@ router.get('/recent', verifyShop, async (req, res) => {
           WHERE r.store_id = $1
           ORDER BY r.created_at DESC
           LIMIT $2
-        `).all(req.store.id, limit)
+        `, [req.store.id, limit])).rows
       : db.prepare(`
           SELECT r.id, r.order_id, r.offer_id, r.response, r.created_at, r.added_revenue,
                  o.offer_type, o.headline, o.message
@@ -203,14 +248,14 @@ router.get('/recent', verifyShop, async (req, res) => {
 router.get('/ab-groups', verifyShop, async (req, res) => {
   try {
     const groups = db.usePostgres
-      ? await db.prepare(`
+      ? (await db.query(`
           SELECT g.*,
             (SELECT COUNT(*) FROM upsell_responses r WHERE r.offer_id = ANY(g.offer_ids) AND r.response = 'accepted') as total_accepts,
             (SELECT COUNT(*) FROM upsell_responses r WHERE r.offer_id = ANY(g.offer_ids) AND r.response = 'declined') as total_declines
           FROM upsell_ab_groups g
           WHERE g.store_id = $1
           ORDER BY g.created_at DESC
-        `).all(req.store.id)
+        `, [req.store.id])).rows
       : db.prepare(`
           SELECT g.* FROM upsell_ab_groups g
           WHERE g.store_id = ?
@@ -233,7 +278,7 @@ router.get('/ab-groups', verifyShop, async (req, res) => {
       // Batch-fetch all offers for this group in a single query
       let offers;
       if (db.usePostgres) {
-        offers = await db.prepare(`SELECT * FROM upsell_offers WHERE id = ANY($1)`).all(offerIds);
+        offers = (await db.query(`SELECT * FROM upsell_offers WHERE id = ANY($1)`, [offerIds])).rows;
       } else {
         const placeholders = offerIds.map(() => '?').join(',');
         offers = db.prepare(`SELECT * FROM upsell_offers WHERE id IN (${placeholders})`).all(...offerIds);
@@ -242,10 +287,10 @@ router.get('/ab-groups', verifyShop, async (req, res) => {
       // Batch-fetch all stats for this group's offers in a single query
       let statsMap = {};
       if (db.usePostgres) {
-        const stats = await db.prepare(`
+        const stats = (await db.query(`
           SELECT offer_id, response, COUNT(*) as cnt FROM upsell_responses
           WHERE offer_id = ANY($1) GROUP BY offer_id, response
-        `).all(offerIds);
+        `, [offerIds])).rows;
         for (const r of stats) {
           if (!statsMap[r.offer_id]) statsMap[r.offer_id] = { accepts: 0, declines: 0 };
           if (r.response === 'accepted') statsMap[r.offer_id].accepts = parseInt(r.cnt);

@@ -3,14 +3,14 @@ import { api } from '../api/index.js';
 import ProductPicker from '../components/ProductPicker.jsx';
 
 const INITIAL_FORM = {
-  offer_type: 'add_to_order',
-  trigger_threshold: '50',
-  target_product_id: '',
+  offer_type: 'add_product',
+  trigger_min_amount: '50',
+  upsell_product_id: '',
   target_tags: '',
-  discount_code: '',
-  discount_percent: '',
+  upsell_discount_code: '',
+  upsell_discount_value: '',
   message: '',
-  active: true
+  status: 'active'
 };
 
 export default function Upsells({ store, appConfig }) {
@@ -53,24 +53,24 @@ export default function Upsells({ store, appConfig }) {
   }
 
   function handleProductSelect({ product, variant }) {
-    setForm({ ...form, target_product_id: product.id });
+    setForm({ ...form, upsell_product_id: product.id });
     setSelectedProductName(product.title);
     setShowProductPicker(false);
-    setFormErrors({ ...formErrors, target_product_id: null });
+    setFormErrors({ ...formErrors, upsell_product_id: null });
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     const errors = {};
 
-    // Validate: if offer_type is 'add_to_order' and target_product_id is empty
-    if (form.offer_type === 'add_to_order' && !form.target_product_id) {
-      errors.target_product_id = 'Please select a product';
+    // Validate: if offer_type is 'add_product' and upsell_product_id is empty
+    if (form.offer_type === 'add_product' && !form.upsell_product_id) {
+      errors.upsell_product_id = 'Please select a product';
     }
 
-    // Validate: if offer_type is 'discount_code' and discount_percent is empty or 0
-    if (form.offer_type === 'discount_code' && (!form.discount_percent || parseFloat(form.discount_percent) === 0)) {
-      errors.discount_percent = 'Please set a discount value';
+    // Validate: if offer_type is 'discount_code' and upsell_discount_value is empty or 0
+    if (form.offer_type === 'discount_code' && (!form.upsell_discount_value || parseFloat(form.upsell_discount_value) === 0)) {
+      errors.upsell_discount_value = 'Please set a discount value';
     }
 
     // Set default message if empty
@@ -84,13 +84,13 @@ export default function Upsells({ store, appConfig }) {
     try {
       const payload = {
         offer_type: form.offer_type,
-        trigger_threshold: parseFloat(form.trigger_threshold) || 0,
-        target_product_id: form.target_product_id || null,
+        trigger_min_amount: parseFloat(form.trigger_min_amount) || 0,
+        upsell_product_id: form.upsell_product_id || null,
         target_tags: form.target_tags || null,
-        discount_code: form.discount_code || null,
-        discount_percent: form.discount_percent ? parseFloat(form.discount_percent) : null,
+        upsell_discount_code: form.upsell_discount_code || null,
+        upsell_discount_value: form.upsell_discount_value ? parseFloat(form.upsell_discount_value) : null,
         message: messageToSend,
-        active: form.active
+        status: form.status
       };
 
       if (editing) {
@@ -111,23 +111,24 @@ export default function Upsells({ store, appConfig }) {
     setEditing(offer);
     setForm({
       offer_type: offer.offer_type,
-      trigger_threshold: String(offer.trigger_threshold || '0'),
-      target_product_id: offer.target_product_id || '',
+      trigger_min_amount: String(offer.trigger_min_amount || '0'),
+      upsell_product_id: offer.upsell_product_id || '',
       target_tags: offer.target_tags || '',
-      discount_code: offer.discount_code || '',
-      discount_percent: offer.discount_percent ? String(offer.discount_percent) : '',
+      upsell_discount_code: offer.upsell_discount_code || '',
+      upsell_discount_value: offer.upsell_discount_value ? String(offer.upsell_discount_value) : '',
       message: offer.message || '',
-      active: !!offer.active
+      status: offer.status || 'active'
     });
     // If offer has a product_id, try to show a name (we store the id only in this form)
-    setSelectedProductName(offer.target_product_id ? `Product ID: ${offer.target_product_id}` : '');
+    setSelectedProductName(offer.upsell_product_id ? `Product ID: ${offer.upsell_product_id}` : '');
     setFormErrors({});
     setShowForm(true);
   }
 
   async function toggleActive(offer) {
     try {
-      await api.updateUpsellOffer(offer.id, { active: !offer.active });
+      const newStatus = offer.status === 'active' ? 'draft' : 'active';
+      await api.updateUpsellOffer(offer.id, { status: newStatus });
       loadData();
     } catch (e) {
       alert('Error updating offer: ' + e.message);
@@ -193,18 +194,18 @@ export default function Upsells({ store, appConfig }) {
               <div className="form-group">
                 <label>Offer Type</label>
                 <select value={form.offer_type} onChange={e => setForm({ ...form, offer_type: e.target.value })}>
-                  <option value="add_to_order">One-Click Add to Order</option>
+                  <option value="add_product">One-Click Add to Order</option>
                   <option value="discount_code">Discount Code</option>
                 </select>
               </div>
 
               <div className="form-group">
                 <label>Minimum Order Value ($)</label>
-                <input type="number" step="0.01" value={form.trigger_threshold} onChange={e => setForm({ ...form, trigger_threshold: e.target.value })} placeholder="50.00" />
+                <input type="number" step="0.01" value={form.trigger_min_amount} onChange={e => setForm({ ...form, trigger_min_amount: e.target.value })} placeholder="50.00" />
                 <small>Offer triggers for orders at or above this value</small>
               </div>
 
-              {form.offer_type === 'add_to_order' && (
+              {form.offer_type === 'add_product' && (
                 <div className="form-group">
                   <label>Target Product</label>
                   <button type="button" className="btn-secondary" onClick={() => setShowProductPicker(true)}>
@@ -215,7 +216,7 @@ export default function Upsells({ store, appConfig }) {
                       <span className="selected-product-name">{selectedProductName}</span>
                     </div>
                   )}
-                  {formErrors.target_product_id && <span className="inline-error">{formErrors.target_product_id}</span>}
+                  {formErrors.upsell_product_id && <span className="inline-error">{formErrors.upsell_product_id}</span>}
                   <small>Select the product to offer as an upsell</small>
                 </div>
               )}
@@ -230,12 +231,12 @@ export default function Upsells({ store, appConfig }) {
                 <>
                   <div className="form-group">
                     <label>Discount Code</label>
-                    <input type="text" value={form.discount_code} onChange={e => setForm({ ...form, discount_code: e.target.value })} placeholder="SAVE10" />
+                    <input type="text" value={form.upsell_discount_code} onChange={e => setForm({ ...form, upsell_discount_code: e.target.value })} placeholder="SAVE10" />
                   </div>
                   <div className="form-group">
                     <label>Discount Percent (%)</label>
-                    <input type="number" value={form.discount_percent} onChange={e => setForm({ ...form, discount_percent: e.target.value })} placeholder="10" />
-                    {formErrors.discount_percent && <span className="inline-error">{formErrors.discount_percent}</span>}
+                    <input type="number" value={form.upsell_discount_value} onChange={e => setForm({ ...form, upsell_discount_value: e.target.value })} placeholder="10" />
+                    {formErrors.upsell_discount_value && <span className="inline-error">{formErrors.upsell_discount_value}</span>}
                   </div>
                 </>
               )}
@@ -248,7 +249,7 @@ export default function Upsells({ store, appConfig }) {
 
               <div className="form-group checkbox-group">
                 <label>
-                  <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
+                  <input type="checkbox" checked={form.status === 'active'} onChange={e => setForm({ ...form, status: e.target.checked ? 'active' : 'draft' })} />
                   Active (offer will show to customers)
                 </label>
               </div>
@@ -278,24 +279,24 @@ export default function Upsells({ store, appConfig }) {
         ) : (
           <div className="offers-list">
             {offers.map(offer => (
-              <div key={offer.id} className={`offer-card ${!offer.active ? 'inactive' : ''}`}>
+              <div key={offer.id} className={`offer-card ${offer.status !== 'active' ? 'inactive' : ''}`}>
                 <div className="offer-header">
                   <span className={`offer-type-badge ${offer.offer_type}`}>
-                    {offer.offer_type === 'add_to_order' ? 'Add to Order' : 'Discount Code'}
+                    {offer.offer_type === 'add_product' ? 'Add to Order' : 'Discount Code'}
                   </span>
                   <label className="toggle">
-                    <input type="checkbox" checked={!!offer.active} onChange={() => toggleActive(offer)} />
+                    <input type="checkbox" checked={offer.status === 'active'} onChange={() => toggleActive(offer)} />
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
                 <div className="offer-body">
                   <p className="offer-message">{offer.message || <em>Default message</em>}</p>
                   <div className="offer-meta">
-                    <span>Min order: <strong>${offer.trigger_threshold || 0}</strong></span>
-                    {offer.target_product_id && <span>Product IDs: <strong>{offer.target_product_id}</strong></span>}
+                    <span>Min order: <strong>${offer.trigger_min_amount || 0}</strong></span>
+                    {offer.upsell_product_id && <span>Product IDs: <strong>{offer.upsell_product_id}</strong></span>}
                     {offer.target_tags && <span>Tags: <strong>{offer.target_tags}</strong></span>}
-                    {offer.discount_code && <span>Code: <strong>{offer.discount_code}</strong></span>}
-                    {offer.discount_percent && <span>Discount: <strong>{offer.discount_percent}%</strong></span>}
+                    {offer.upsell_discount_code && <span>Code: <strong>{offer.upsell_discount_code}</strong></span>}
+                    {offer.upsell_discount_value && <span>Discount: <strong>{offer.upsell_discount_value}%</strong></span>}
                   </div>
                 </div>
                 <div className="offer-actions">

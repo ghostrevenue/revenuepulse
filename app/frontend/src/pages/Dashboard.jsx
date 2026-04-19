@@ -43,7 +43,7 @@ export default function Dashboard({ store, appConfig }) {
       });
       setOffers(offersRes.offers || []);
       setRecent(recentRes.responses || []);
-      setAbTests(abTestsRes.tests || []);
+      setAbTests(abTestsRes.groups || []);
     } catch (e) {
       console.error('Dashboard load error:', e.message);
       // Fallback with demo indicator
@@ -111,6 +111,16 @@ export default function Dashboard({ store, appConfig }) {
     triggered_trend = 0,
   } = stats || {};
 
+  // Build display name for recent activity item — prefer headline, fall back to offer_type
+  function getDisplayName(item) {
+    if (item.headline) return item.headline;
+    if (item.offer_name) return item.offer_name;
+    if (item.offer_type === 'add_product') return 'Add to Order Offer';
+    if (item.offer_type === 'warranty') return 'Warranty Offer';
+    if (item.offer_type === 'discount') return 'Discount Offer';
+    return `Offer #${item.offer_id}`;
+  }
+
   const hasActiveABTests = abTests.length > 0;
   const activeABTest = abTests[0]; // Show first active test
 
@@ -147,7 +157,7 @@ export default function Dashboard({ store, appConfig }) {
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
             </svg>
           </div>
-          <span><strong>A/B Test Active</strong> — variant A: {100 - (activeABTest.traffic_split_b || 50)}% · variant B: {activeABTest.traffic_split_b || 50}%</span>
+          <span><strong>A/B Test Active</strong> — variant A: {100 - (activeABTest.variants?.[1]?.traffic_split || 50)}% · variant B: {activeABTest.variants?.[1]?.traffic_split || 50}%</span>
           <button className="ab-banner-btn" onClick={() => window.location.hash = '#/offers'}>
             View Results
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
@@ -297,7 +307,7 @@ export default function Dashboard({ store, appConfig }) {
                         {offer.offer_type === 'add_product' ? 'Add to Order' : offer.offer_type === 'warranty' ? 'Warranty' : 'Discount Code'}
                       </span>
                       {offer.ab_test_id && <span className="ab-badge">A/B</span>}
-                      · Min ${offer.trigger_threshold || 0}
+                      · Min ${offer.trigger_min_amount || 0}
                     </div>
                   </div>
                   <label className="toggle">

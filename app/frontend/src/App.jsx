@@ -191,7 +191,21 @@ export default function App() {
       <Sidebar activePage={activePage} setActivePage={(page) => { setActivePage(page); window.location.hash = page; }} store={store} />
       <main className="main-content">
         {activePage === '#/offers' ? (
-          <OfferBuilder funnel={funnel || { id: null, name: 'Untitled Funnel', status: 'draft', nodes: [] }} onSave={(updated) => setFunnel(updated)} onClose={() => { setFunnel(null); setActivePage('#/dashboard'); }} />
+          <OfferBuilder funnel={funnel || { id: null, name: 'Untitled Funnel', status: 'draft', nodes: [] }} onSave={async (updated) => {
+            try {
+              if (updated.id) {
+                const result = await api.updateFunnel(updated.id, updated);
+                setFunnel(result.funnel || result);
+              } else {
+                const result = await api.createFunnel(updated);
+                setFunnel(result.funnel || result);
+              }
+            } catch (e) {
+              console.error('Failed to persist funnel:', e.message);
+              // Still update local state so UI doesn't get stuck
+              setFunnel(updated);
+            }
+          }} onClose={() => { setFunnel(null); setActivePage('#/dashboard'); }} />
         ) : (
           <PageComponent store={store} appConfig={appConfig} />
         )}

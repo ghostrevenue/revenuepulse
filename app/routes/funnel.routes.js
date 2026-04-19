@@ -9,15 +9,16 @@ const router = Router();
 router.use(verifyShop);
 
 // Helper: run a db statement (handles Postgres $N vs SQLite ?)
-function dbRun(sql, params) {
+// All return Promises so callers must await them
+async function dbRun(sql, params) {
   if (db.usePostgres) return db.prepare(sql).run(...params);
   return db.prepare(sql).run(...params);
 }
-function dbGet(sql, params) {
+async function dbGet(sql, params) {
   if (db.usePostgres) return db.prepare(sql).get(...params);
   return db.prepare(sql).get(...params);
 }
-function dbAll(sql, params) {
+async function dbAll(sql, params) {
   if (db.usePostgres) return db.prepare(sql).all(...params);
   return db.prepare(sql).all(...params);
 }
@@ -27,7 +28,7 @@ router.get('/', async (req, res) => {
   try {
     await db.ensureReady();
     const sql = "SELECT * FROM funnels WHERE store_id = ? ORDER BY updated_at DESC";
-    const rows = dbAll(sql, [req.shop]);
+    const rows = await dbAll(sql, [req.store.id]);
     const funnels = rows.map(f => ({
       ...f,
       trigger: f.trigger_json ? JSON.parse(f.trigger_json) : { conditions: [], match: 'all' },
@@ -50,10 +51,10 @@ router.post('/', async (req, res) => {
     const nodesJson = JSON.stringify(nodes || []);
 
     const sql = `INSERT INTO funnels (id, store_id, name, trigger_json, nodes_json) VALUES (?, ?, ?, ?, ?)`;
-    dbRun(sql, [id, req.shop, name || 'Untitled Funnel', triggerJson, nodesJson]);
+    await dbRun(sql, [id, req.store.id, name || 'Untitled Funnel', triggerJson, nodesJson]);
 
     const sqlGet = "SELECT * FROM funnels WHERE id = ?";
-    const f = dbGet(sqlGet, [id]);
+    const f = await dbGet(sqlGet, [id]);
     res.json({
       funnel: {
         ...f,
@@ -72,7 +73,7 @@ router.get('/:id', async (req, res) => {
   try {
     await db.ensureReady();
     const sql = "SELECT * FROM funnels WHERE id = ? AND store_id = ?";
-    const f = dbGet(sql, [req.params.id, req.shop]);
+    const f = await dbGet(sql, [req.params.id, req.store.id]);
     if (!f) return res.status(404).json({ error: 'Funnel not found' });
     res.json({
       funnel: {
@@ -93,7 +94,7 @@ router.put('/:id', async (req, res) => {
     await db.ensureReady();
     const { name, status, trigger, nodes } = req.body;
     const sql = "SELECT * FROM funnels WHERE id = ? AND store_id = ?";
-    const existing = dbGet(sql, [req.params.id, req.shop]);
+    const existing = await dbGet(sql, [req.params.id, req.store.id]);
     if (!existing) return res.status(404).json({ error: 'Funnel not found' });
 
     const updatedName = name ?? existing.name;
@@ -101,12 +102,12 @@ router.put('/:id', async (req, res) => {
     const updatedTrigger = JSON.stringify(trigger ?? JSON.parse(existing.trigger_json || '{}'));
     const updatedNodes = JSON.stringify(nodes ?? JSON.parse(existing.nodes_json || '[]'));
 
-    dbRun(
+    await dbRun(
       "UPDATE funnels SET name = ?, status = ?, trigger_json = ?, nodes_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?",
-      [updatedName, updatedStatus, updatedTrigger, updatedNodes, req.params.id, req.shop]
+      [updatedName, updatedStatus, updatedTrigger, updatedNodes, req.params.id, req.store.id]
     );
 
-    const f = dbGet("SELECT * FROM funnels WHERE id = ?", [req.params.id]);
+    const f = await dbGet("SELECT * FROM funnels WHERE id = ?", [req.params.id]);
     res.json({
       funnel: {
         ...f,
@@ -124,7 +125,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await db.ensureReady();
-    dbRun("DELETE FROM funnels WHERE id = ? AND store_id = ?", [req.params.id, req.shop]);
+    await dbRun("DELETE FROM funnels WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/funnels/:id error:', err);
@@ -136,7 +137,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/publish', async (req, res) => {
   try {
     await db.ensureReady();
-    dbRun("UPDATE funnels SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.shop]);
+    await dbRun("UPDATE funnels SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to publish funnel' });
@@ -147,7 +148,7 @@ router.post('/:id/publish', async (req, res) => {
 router.post('/:id/unpublish', async (req, res) => {
   try {
     await db.ensureReady();
-    dbRun("UPDATE funnels SET status = 'draft', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.shop]);
+    await dbRun("UPDATE funnels SET status = 'draft', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to unpublish funnel' });
@@ -158,10 +159,10 @@ router.post('/:id/unpublish', async (req, res) => {
 router.get('/:id/analytics', async (req, res) => {
   try {
     await db.ensureReady();
-    const funnel = dbGet("SELECT * FROM funnels WHERE id = ? AND store_id = ?", [req.params.id, req.shop]);
+    const funnel = await dbGet("SELECT * FROM funnels WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     if (!funnel) return res.status(404).json({ error: 'Funnel not found' });
 
-    const rows = dbAll("SELECT * FROM funnel_events WHERE funnel_id = ? ORDER BY created_at DESC LIMIT 10000", [req.params.id]);
+    const rows = await dbAll("SELECT * FROM funnel_events WHERE funnel_id = ? ORDER BY created_at DESC LIMIT 10000", [req.params.id]);
     const nodes = JSON.parse(funnel.nodes_json || '[]');
 
     const nodeMetrics = {};
@@ -202,7 +203,7 @@ router.post('/:id/events', async (req, res) => {
     if (!['impression', 'accept', 'decline'].includes(event_type)) {
       return res.status(400).json({ error: 'Invalid event_type' });
     }
-    dbRun(
+    await dbRun(
       'INSERT INTO funnel_events (id, funnel_id, node_id, event_type, amount) VALUES (?, ?, ?, ?, ?)',
       [uuidv4(), req.params.id, node_id || null, event_type, amount || 0]
     );

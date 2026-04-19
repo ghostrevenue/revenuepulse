@@ -80,39 +80,23 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  // Persist funnel to backend and update local state
+  // Persist funnel to backend via App.jsx onSave (which calls funnel API)
   async function handleSave(data) {
     // Prevent duplicate saves
-    if (saveStatus === 'saving' || isCreating) return;
-
-    // Always update local state first so UI stays responsive
-    onSave(data);
+    if (saveStatus === 'saving') return;
 
     setSaveStatus('saving');
     setSaveError(null);
 
-    // Persist to backend
     try {
-      if (data.id) {
-        await api.updateUpsellOffer(data.id, data);
-      } else {
-        const result = await api.createUpsellOffer(data);
-        // If the result has an ID, update the funnel with the new ID
-        if (result && result.id) {
-          onSave({ ...data, id: result.id });
-        } else {
-          // API didn't return an ID — log warning but don't crash
-          console.warn('createUpsellOffer did not return an ID:', result);
-        }
-      }
+      // onSave in App.jsx calls the funnel API (create or update)
+      await onSave(data);
       setSaveStatus('saved');
-      // Reset to idle after 3 seconds so subsequent saves still work
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (e) {
-      console.error('Failed to save offer:', e);
+      console.error('Failed to save funnel:', e);
       setSaveError(e.message || 'Failed to save');
       setSaveStatus('error');
-      // Local state was already updated above, so UI is still usable
     }
   }
 
