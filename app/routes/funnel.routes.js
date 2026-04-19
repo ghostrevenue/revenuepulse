@@ -11,15 +11,28 @@ router.use(verifyShop);
 // Helper: run a db statement (handles Postgres $N vs SQLite ?)
 // All return Promises so callers must await them
 async function dbRun(sql, params) {
-  if (db.usePostgres) return db.prepare(sql).run(...params);
+  if (db.usePostgres) {
+    // Postgres: convert ? to $1, $2, ... for the prepare interface
+    let idx = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
+    return db.prepare(pgSql).run(...params);
+  }
   return db.prepare(sql).run(...params);
 }
 async function dbGet(sql, params) {
-  if (db.usePostgres) return db.prepare(sql).get(...params);
+  if (db.usePostgres) {
+    let idx = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
+    return db.prepare(pgSql).get(...params);
+  }
   return db.prepare(sql).get(...params);
 }
 async function dbAll(sql, params) {
-  if (db.usePostgres) return db.prepare(sql).all(...params);
+  if (db.usePostgres) {
+    let idx = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++idx}`);
+    return db.prepare(pgSql).all(...params);
+  }
   return db.prepare(sql).all(...params);
 }
 

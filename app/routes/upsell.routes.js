@@ -249,7 +249,9 @@ router.post('/offers', verifyShop, async (req, res) => {
   } = req.body;
 
   if (!offer_type) return res.status(400).json({ error: 'offer_type is required' });
-  if (!['add_product', 'discount', 'warranty'].includes(offer_type)) {
+  // Normalize discount_code → discount (legacy alias)
+  const normalizedOfferType = offer_type === 'discount_code' ? 'discount' : offer_type;
+  if (!['add_product', 'discount', 'warranty'].includes(normalizedOfferType)) {
     return res.status(400).json({ error: 'offer_type must be "add_product", "discount", or "warranty"' });
   }
 
@@ -295,7 +297,7 @@ router.post('/offers', verifyShop, async (req, res) => {
       : null;
 
     const params = [
-      storeId, name || null, offer_type,
+      storeId, name || null, normalizedOfferType,
       trigger_min_amount || 0,
       triggerJson,
       upsell_product_id || null,

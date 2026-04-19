@@ -73,9 +73,14 @@ router.get('/stats', verifyShop, async (req, res) => {
     }
 
     // Calculate week-over-week trends
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()).toISOString();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const lastWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 7).toISOString();
+
     let revenueLiftedTrend = 0, acceptsTrend = 0, declinesTrend = 0, rateTrend = 0, triggeredTrend = 0;
     try {
-      const lastWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 7).toISOString();
       const thisWeekRevenue = db.usePostgres
         ? (await db.query(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = $1 AND response = 'accepted' AND created_at >= $2`, [storeId, weekStart])).rows[0]?.total || 0
         : db.prepare(`SELECT COALESCE(SUM(added_revenue), 0) as total FROM upsell_responses WHERE store_id = ? AND response = 'accepted' AND created_at >= ?`).get(storeId, weekStart)?.total || 0;
@@ -116,11 +121,6 @@ router.get('/stats', verifyShop, async (req, res) => {
     const roiEstimate = planCost > 0 ? Math.round((totalRevenueLifted / planCost) * 100) / 100 : 0;
 
     // Time-bounded accepts
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()).toISOString();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
     // Accepts today
     let acceptsToday = 0;
     if (db.usePostgres) {

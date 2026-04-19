@@ -22,7 +22,7 @@ export default function Dashboard({ store, appConfig }) {
         api.getDashboardStats(),
         api.getUpsellOffers(),
         api.getDashboardRecent(),
-        api.getABTests().catch(() => ({ tests: [] })),
+        api.getABTests().catch(() => ({ groups: [] })),
       ]);
       const statsData = statsRes || {};
       // Only fall back to demo indicators if explicitly requested or API returned no data at all
@@ -124,6 +124,10 @@ export default function Dashboard({ store, appConfig }) {
   const hasActiveABTests = abTests.length > 0;
   const activeABTest = abTests[0]; // Show first active test
 
+  // Compute variant B traffic split (stored as traffic_split on variant A = % for A, so B = 100 - A)
+  const variantATraffic = activeABTest?.variants?.[0]?.traffic_split ?? 50;
+  const variantBTraffic = 100 - variantATraffic;
+
   return (
     <div className="dashboard">
       <div className="page-header">
@@ -157,7 +161,7 @@ export default function Dashboard({ store, appConfig }) {
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
             </svg>
           </div>
-          <span><strong>A/B Test Active</strong> — variant A: {100 - (activeABTest.variants?.[1]?.traffic_split || 50)}% · variant B: {activeABTest.variants?.[1]?.traffic_split || 50}%</span>
+          <span><strong>A/B Test Active</strong> — variant A: {variantATraffic}% · variant B: {variantBTraffic}%</span>
           <button className="ab-banner-btn" onClick={() => window.location.hash = '#/offers'}>
             View Results
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">

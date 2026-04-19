@@ -3,6 +3,7 @@ import { api } from '../api/index.js';
 import ProductPicker from '../components/ProductPicker.jsx';
 
 const INITIAL_FORM = {
+  name: '',
   offer_type: 'add_product',
   trigger_min_amount: '50',
   upsell_product_id: '',
@@ -68,8 +69,8 @@ export default function Upsells({ store, appConfig }) {
       errors.upsell_product_id = 'Please select a product';
     }
 
-    // Validate: if offer_type is 'discount_code' and upsell_discount_value is empty or 0
-    if (form.offer_type === 'discount_code' && (!form.upsell_discount_value || parseFloat(form.upsell_discount_value) === 0)) {
+    // Validate: if offer_type is 'discount' and upsell_discount_value is empty or 0
+    if ((form.offer_type === 'discount' || form.offer_type === 'discount_code') && (!form.upsell_discount_value || parseFloat(form.upsell_discount_value) === 0)) {
       errors.upsell_discount_value = 'Please set a discount value';
     }
 
@@ -83,6 +84,7 @@ export default function Upsells({ store, appConfig }) {
 
     try {
       const payload = {
+        name: form.name || null,
         offer_type: form.offer_type,
         trigger_min_amount: parseFloat(form.trigger_min_amount) || 0,
         upsell_product_id: form.upsell_product_id || null,
@@ -110,7 +112,9 @@ export default function Upsells({ store, appConfig }) {
   function startEdit(offer) {
     setEditing(offer);
     setForm({
-      offer_type: offer.offer_type,
+      name: offer.name || '',
+      // Normalize discount_code → discount (legacy data from before the fix)
+      offer_type: offer.offer_type === 'discount_code' ? 'discount' : (offer.offer_type || 'add_product'),
       trigger_min_amount: String(offer.trigger_min_amount || '0'),
       upsell_product_id: offer.upsell_product_id || '',
       target_tags: offer.target_tags || '',
@@ -195,7 +199,7 @@ export default function Upsells({ store, appConfig }) {
                 <label>Offer Type</label>
                 <select value={form.offer_type} onChange={e => setForm({ ...form, offer_type: e.target.value })}>
                   <option value="add_product">One-Click Add to Order</option>
-                  <option value="discount_code">Discount Code</option>
+                  <option value="discount">Discount Code</option>
                 </select>
               </div>
 
@@ -227,7 +231,7 @@ export default function Upsells({ store, appConfig }) {
                 <small>Trigger only for orders with products having these tags</small>
               </div>
 
-              {form.offer_type === 'discount_code' && (
+              {(form.offer_type === 'discount' || form.offer_type === 'discount_code') && (
                 <>
                   <div className="form-group">
                     <label>Discount Code</label>
