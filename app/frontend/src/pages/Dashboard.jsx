@@ -7,6 +7,7 @@ export default function Dashboard({ store, appConfig }) {
   const [recent, setRecent] = useState([]);
   const [abTests, setAbTests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [togglingOfferId, setTogglingOfferId] = useState(null); // Track which offer is being toggled
 
   useEffect(() => {
     if (!store) {
@@ -36,6 +37,7 @@ export default function Dashboard({ store, appConfig }) {
         // Only show trends if we have real data to back them
         revenue_lifted_trend: hasRealData ? (statsData.revenue_lifted_trend || 0) : 0,
         accepts_trend: hasRealData ? (statsData.accepts_trend || 0) : 0,
+        declines_trend: hasRealData ? (statsData.declines_trend || 0) : 0,
         rate_trend: hasRealData ? (statsData.rate_trend || 0) : 0,
         triggered_trend: hasRealData ? (statsData.triggered_trend || 0) : 0,
         // Demo data indicator
@@ -65,11 +67,15 @@ export default function Dashboard({ store, appConfig }) {
   }
 
   async function toggleOffer(offer) {
+    if (togglingOfferId) return; // Prevent double-toggle
+    setTogglingOfferId(offer.id);
     try {
       await api.updateUpsellOffer(offer.id, { active: !offer.active });
       loadData();
     } catch (e) {
       console.error('Error toggling offer:', e.message);
+    } finally {
+      setTogglingOfferId(null);
     }
   }
 
@@ -318,6 +324,7 @@ export default function Dashboard({ store, appConfig }) {
                     <input
                       type="checkbox"
                       checked={!!offer.active}
+                      disabled={togglingOfferId === offer.id}
                       onChange={() => toggleOffer(offer)}
                     />
                     <span className="toggle-slider" />

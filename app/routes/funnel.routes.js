@@ -153,6 +153,7 @@ router.post('/:id/publish', async (req, res) => {
     await dbRun("UPDATE funnels SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     res.json({ success: true });
   } catch (err) {
+    console.error('POST /api/funnels/:id/publish error:', err);
     res.status(500).json({ error: 'Failed to publish funnel' });
   }
 });
@@ -164,6 +165,7 @@ router.post('/:id/unpublish', async (req, res) => {
     await dbRun("UPDATE funnels SET status = 'draft', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?", [req.params.id, req.store.id]);
     res.json({ success: true });
   } catch (err) {
+    console.error('POST /api/funnels/:id/unpublish error:', err);
     res.status(500).json({ error: 'Failed to unpublish funnel' });
   }
 });

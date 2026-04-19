@@ -3,11 +3,20 @@ import { api } from '../api/index.js';
 
 export default function UpsellConfirmation({ store, appConfig, offerId }) {
   // In a real scenario, these come from the order confirmation page context
-  // For preview, we use mock data
+  // For preview, we use a session-scoped UUID so preview events don't corrupt analytics
+  const [orderId] = useState(() => {
+    const key = 'rp_preview_order_id';
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = 'PREVIEW-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  });
   const [offer, setOffer] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | accepting | accepted | declining | declined
   const [loading, setLoading] = useState(true);
-  const [orderId] = useState('PREVIEW-ORDER');
+  const [error, setError] = useState(null); // inline error message
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
   // Deterministic social-proof count — derived from order ID so it never changes
@@ -45,49 +54,66 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
 
   async function loadPreviewOffer() {
     try {
-      // Try to load specific offer if offerId provided, otherwise load first active
-      let activeOffer;
-      if (offerId) {
-        activeOffer = await api.getUpsellOffer(offerId);
-        activeOffer = activeOffer.offer;
+      // Validate offerId — reject obviously malformed IDs (e.g. "undefined", empty strings)
+      if (offerId && typeof offerId === 'string' && offerId.trim() !== '' && offerId !== 'undefined') {
+        try {
+          const res = await api.getUpsellOffer(offerId);
+          if (res.offer) {
+            setOffer(normalizeOffer(res.offer));
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          // Fall through to fallback offer selection
+          setError('Could not load this offer. Showing a preview instead.');
+        }
       }
-      if (!activeOffer) {
-        const offersRes = await api.getUpsellOffers();
-        const offers = offersRes.offers || [];
-        activeOffer = offers.find(o => o.active) || offers[0];
-      }
+      // No valid offerId — load the first active offer as preview
+      const offersRes = await api.getUpsellOffers();
+      const offers = offersRes.offers || [];
+      const activeOffer = offers.find(o => o.active) || offers[0];
       if (activeOffer) {
-        setOffer({
-          ...activeOffer,
-          product_title: activeOffer.upsell_product_title || 'Wireless Bluetooth Earbuds',
-          product_price: activeOffer.upsell_product_price || 29.99,
-          product_image: activeOffer.upsell_product_image || '',
-          headline: activeOffer.headline || 'Wait! Add this to your order',
-          message: activeOffer.message || 'Get it delivered with your current order — just one click away.',
-          discount_code: activeOffer.discount_code || 'SAVE15',
-          discount_percent: activeOffer.discount_percent || 15,
-          // Warranty fields
-          warranty_price: activeOffer.warranty_price || null,
-          warranty_description: activeOffer.warranty_description || '',
-          warranty_covered: activeOffer.warranty_covered || '',
-        });
+        setOffer(normalizeOffer(activeOffer));
+      } else {
+        setOffer(getFallbackOffer());
       }
     } catch (e) {
-      // Use fallback preview offer
-      setOffer({
-        id: 'preview',
-        offer_type: 'add_product',
-        headline: 'Wait! Add this to your order',
-        message: 'Get it delivered with your current order — just one click away.',
-        product_title: 'Wireless Bluetooth Earbuds',
-        product_price: 29.99,
-        product_image: '',
-        discount_code: 'SAVE15',
-        discount_percent: 15,
-      });
+      // Use fallback preview offer on any error
+      setOffer(getFallbackOffer());
     } finally {
       setLoading(false);
     }
+  }
+
+  // Normalize an offer object into the shape UpsellConfirmation expects
+  function normalizeOffer(offerData) {
+    return {
+      ...offerData,
+      product_title: offerData.upsell_product_title || offerData.product_title || 'Wireless Bluetooth Earbuds',
+      product_price: offerData.upsell_product_price || offerData.product?.price || 29.99,
+      product_image: offerData.upsell_product_image || offerData.product?.image || '',
+      headline: offerData.headline || 'Wait! Add this to your order',
+      message: offerData.message || 'Get it delivered with your current order — just one click away.',
+      discount_code: offerData.discount_code || 'SAVE15',
+      discount_percent: offerData.discount_percent || 15,
+      warranty_price: offerData.warranty_price || null,
+      warranty_description: offerData.warranty_description || '',
+      warranty_covered: offerData.warranty_covered || '',
+    };
+  }
+
+  function getFallbackOffer() {
+    return {
+      id: 'preview',
+      offer_type: 'add_product',
+      headline: 'Wait! Add this to your order',
+      message: 'Get it delivered with your current order — just one click away.',
+      product_title: 'Wireless Bluetooth Earbuds',
+      product_price: 29.99,
+      product_image: '',
+      discount_code: 'SAVE15',
+      discount_percent: 15,
+    };
   }
 
   async function handleAccept() {
@@ -239,6 +265,15 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
   return (
     <div className="upsell-page">
       <div className="upsell-container">
+        {/* Error banner */}
+        {error && (
+          <div className="upsell-error-banner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            {error}
+          </div>
+        )}
         {/* One-time offer badge */}
         <div className="offer-badge-row">
           <div className="offer-badge one-time">
@@ -381,6 +416,9 @@ export default function UpsellConfirmation({ store, appConfig, offerId }) {
       <style>{`
         .upsell-page { min-height: 100vh; background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .upsell-container { max-width: 480px; margin: 0 auto; padding: 32px 20px 40px; }
+
+        /* Error banner */
+        .upsell-error-banner { display: flex; align-items: center; gap: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; border-radius: 8px; padding: 10px 16px; font-size: 13px; margin-bottom: 16px; }
 
         /* Offer badges */
         .offer-badge-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; }

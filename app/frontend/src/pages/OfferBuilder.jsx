@@ -109,7 +109,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
     setNodeStyle(prev => ({ ...prev, ...updates }));
   }
 
-  function addNode() {
+  async function addNode() {
     if (funnel.nodes.length >= 6) return;
     const idx = funnel.nodes.length + 1;
     const newNode = {
@@ -128,17 +128,20 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
       position: { x: 0, y: 0 },
     };
     const updatedFunnel = { ...funnel, nodes: [...funnel.nodes, newNode] };
-    handleSave(updatedFunnel);
+    // Await save to avoid stale closure in the product-fetch callback below
+    await handleSave(updatedFunnel);
     setSelectedNodeId(newNode.id);
     setActiveStep(1);
     setNodeStyle({});
     // Auto-fetch first Shopify product and pre-populate the node
+    // Uses captured newNodeId to avoid stale closure race
+    const newNodeId = newNode.id;
     api.getShopifyProducts('', null, 1).then(data => {
       if (data.products?.length > 0) {
         const p = data.products[0];
         const firstVariant = p.variants?.find(v => v.inventory_quantity > 0) || p.variants?.[0];
         if (firstVariant) {
-          updateNode(newNode.id, {
+          updateNode(newNodeId, {
             product: {
               product_id: String(p.id),
               variant_id: String(firstVariant.id),

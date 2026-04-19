@@ -25,6 +25,7 @@ export default function Upsells({ store, appConfig }) {
   const [formErrors, setFormErrors] = useState({});
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [selectedProductName, setSelectedProductName] = useState('');
+  const [actionError, setActionError] = useState(null); // inline error for save/toggle/delete
 
   useEffect(() => {
     loadData();
@@ -102,10 +103,11 @@ export default function Upsells({ store, appConfig }) {
       }
       setShowForm(false);
       setEditing(null);
+      setActionError(null);
       resetForm();
       loadData();
     } catch (e) {
-      alert('Error saving offer: ' + e.message);
+      setActionError('Error saving offer: ' + e.message);
     }
   }
 
@@ -135,7 +137,7 @@ export default function Upsells({ store, appConfig }) {
       await api.updateUpsellOffer(offer.id, { status: newStatus });
       loadData();
     } catch (e) {
-      alert('Error updating offer: ' + e.message);
+      setActionError('Error updating offer: ' + e.message);
     }
   }
 
@@ -145,7 +147,7 @@ export default function Upsells({ store, appConfig }) {
       await api.deleteUpsellOffer(id);
       loadData();
     } catch (e) {
-      alert('Error deleting offer: ' + e.message);
+      setActionError('Error deleting offer: ' + e.message);
     }
   }
 
@@ -164,10 +166,21 @@ export default function Upsells({ store, appConfig }) {
           <h1>Post-Purchase Upsells</h1>
           <p className="subtitle">Create compelling one-click upsell offers after checkout</p>
         </div>
-        <button className="btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
+        <button className="btn-primary" onClick={() => { setEditing(null); setShowForm(true); setActionError(null); }}>
           + Create Offer
         </button>
       </div>
+
+      {/* Inline action error */}
+      {actionError && (
+        <div className="inline-error-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          {actionError}
+          <button className="inline-error-close" onClick={() => setActionError(null)}>×</button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="stats-grid">
@@ -344,6 +357,8 @@ export default function Upsells({ store, appConfig }) {
         .page-header h1 { margin: 0 0 4px; }
         .subtitle { color: #666; margin: 0; }
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+        .inline-error-banner { display: flex; align-items: center; gap: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; border-radius: 8px; padding: 10px 16px; font-size: 13px; margin-bottom: 16px; }
+        .inline-error-close { margin-left: auto; background: none; border: none; color: #dc2626; cursor: pointer; font-size: 16px; padding: 0 0 0 8px; line-height: 1; }
         .stat-card { background: white; border: 1px solid #e1e1e1; border-radius: 8px; padding: 20px; text-align: center; }
         .stat-card.highlight { background: #0a8754; color: white; }
         .stat-card.highlight .stat-label { color: rgba(255,255,255,0.8); }
