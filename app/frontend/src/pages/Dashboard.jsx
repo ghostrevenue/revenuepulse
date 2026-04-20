@@ -19,36 +19,42 @@ export default function Dashboard({ store, appConfig }) {
 
   async function loadData() {
     try {
-      const [statsRes, offersRes, recentRes, abTestsRes] = await Promise.all([
-        api.getDashboardStats(),
-        api.getUpsellOffers(),
-        api.getDashboardRecent(),
-        api.getABTests().catch(() => ({ groups: [] })),
+      // Use funnel API as source of truth
+      const [funnelsRes] = await Promise.all([
+        api.getFunnels().catch(() => ({ funnels: [] })),
       ]);
-      const statsData = statsRes || {};
-      // Only fall back to demo indicators if explicitly requested or API returned no data at all
-      const hasRealData = statsData.accepts > 0 || statsData.declines > 0 || statsData.total_revenue_lifted > 0 || statsData.requests > 0;
+      const funnels = funnelsRes.funnels || [];
+      const activeFunnels = funnels.filter(f => f.status === 'active');
+      const draftFunnels = funnels.filter(f => f.status !== 'active');
+
+      // Compute stats from funnel data
+      const totalFunnels = funnels.length;
+      const activeCount = activeFunnels.length;
+      const draftCount = draftFunnels.length;
+      const hasRealData = totalFunnels > 0;
+
       setStats({
-        total_accepts: statsData.accepts || 0,
-        total_declines: statsData.declines || 0,
-        acceptance_rate: statsData.acceptance_rate || 0,
-        revenue_lifted: statsData.total_revenue_lifted || 0,
-        total_triggered: statsData.accepts_this_week || 0,
-        // Only show trends if we have real data to back them
-        revenue_lifted_trend: hasRealData ? (statsData.revenue_lifted_trend || 0) : 0,
-        accepts_trend: hasRealData ? (statsData.accepts_trend || 0) : 0,
-        declines_trend: hasRealData ? (statsData.declines_trend || 0) : 0,
-        rate_trend: hasRealData ? (statsData.rate_trend || 0) : 0,
-        triggered_trend: hasRealData ? (statsData.triggered_trend || 0) : 0,
-        // Demo data indicator
+        total_accepts: 0,
+        total_declines: 0,
+        acceptance_rate: 0,
+        revenue_lifted: 0,
+        total_triggered: 0,
+        revenue_lifted_trend: 0,
+        accepts_trend: 0,
+        declines_trend: 0,
+        rate_trend: 0,
+        triggered_trend: 0,
+        total_funnels: totalFunnels,
+        active_funnels: activeCount,
+        draft_funnels: draftCount,
         is_demo_data: !hasRealData,
       });
-      setOffers(offersRes.offers || []);
-      setRecent(recentRes.responses || []);
-      setAbTests(abTestsRes.groups || []);
+      // Map funnels to the offers-shaped data the UI expects
+      setOffers(funnels);
+      setRecent([]);
+      setAbTests([]);
     } catch (e) {
       console.error('Dashboard load error:', e.message);
-      // Fallback with demo indicator
       setStats({
         total_accepts: 0,
         total_declines: 0,
@@ -70,7 +76,8 @@ export default function Dashboard({ store, appConfig }) {
     if (togglingOfferId) return; // Prevent double-toggle
     setTogglingOfferId(offer.id);
     try {
-      await api.updateUpsellOffer(offer.id, { active: !offer.active });
+      const newStatus = offer.status === 'active' ? 'draft' : 'active';
+      await api.updateFunnel(offer.id, { ...offer, status: newStatus });
       loadData();
     } catch (e) {
       console.error('Error toggling offer:', e.message);
@@ -139,7 +146,7 @@ export default function Dashboard({ store, appConfig }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">{store?.shop} — Post-purchase upsell performance</p>
+          <p className="page-subtitle">{store?.shop} — Manage your post-purchase funnels</p>
         </div>
         <button className="btn-primary" onClick={() => window.location.hash = '#/offers'}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="16" height="16">
@@ -155,7 +162,7 @@ export default function Dashboard({ store, appConfig }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
           </svg>
-          <span><strong>Demo data shown</strong> — No real offer responses yet. Create and publish offers to see real metrics.</span>
+          <span><strong>No funnels yet</strong> — Create and publish funnels to start tracking performance.</span>
         </div>
       )}
 
@@ -178,92 +185,64 @@ export default function Dashboard({ store, appConfig }) {
       )}
 
       <div className="stats-grid">
-        {/* Revenue Attribution — BIGGEST number */}
+        {/* Total Funnels — BIGGEST number */}
         <div className="stat-card accent-green revenue-hero">
           <div className="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
-          <div className="stat-label">Revenue Attribution</div>
+          <div className="stat-label">Total Funnels</div>
           <div className="stat-value revenue-value">
-            ${Number(revenue_lifted || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            {stats?.total_funnels ?? 0}
           </div>
-          <div className="stat-trend positive">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
-              <polyline points="18 15 12 9 6 15"/>
-            </svg>
-            {Math.abs(revenue_lifted_trend || 0).toFixed(1)}% vs last week
+          <div className="stat-trend neutral">
+            {stats?.active_funnels ?? 0} active · {stats?.draft_funnels ?? 0} draft
           </div>
         </div>
 
         <div className="stat-card accent-purple">
           <div className="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           </div>
-          <div className="stat-label">Acceptance Rate</div>
-          <div className="stat-value">{Number(acceptance_rate || 0).toFixed(1)}%</div>
-          <div className={`stat-trend ${rate_trend >= 0 ? 'positive' : 'negative'}`}>
-            {rate_trend >= 0 ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="18 15 12 9 6 15"/></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="6 9 12 15 18 9"/></svg>
-            )}
-            {Math.abs(rate_trend || 0).toFixed(1)}% vs last week
+          <div className="stat-label">Active Funnels</div>
+          <div className="stat-value">{stats?.active_funnels ?? 0}</div>
+          <div className="stat-trend neutral">live and accepting orders</div>
+        </div>
+
+        <div className="stat-card accent-gray">
+          <div className="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </div>
+          <div className="stat-label">Draft Funnels</div>
+          <div className="stat-value">{stats?.draft_funnels ?? 0}</div>
+          <div className="stat-trend neutral">being configured</div>
         </div>
 
         <div className="stat-card accent-green">
           <div className="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           </div>
-          <div className="stat-label">Total Accepts</div>
-          <div className="stat-value">{Number(total_accepts).toLocaleString()}</div>
-          <div className={`stat-trend ${accepts_trend >= 0 ? 'positive' : 'negative'}`}>
-            {accepts_trend >= 0 ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="18 15 12 9 6 15"/></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="6 9 12 15 18 9"/></svg>
-            )}
-            {Math.abs(accepts_trend || 0).toFixed(1)}% vs last week
-          </div>
-        </div>
-
-        <div className="stat-card accent-red">
-          <div className="stat-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </div>
-          <div className="stat-label">Total Declines</div>
-          <div className="stat-value">{Number(total_declines).toLocaleString()}</div>
-          <div className={`stat-trend ${declines_trend >= 0 ? 'negative' : 'positive'}`}>
-            {declines_trend >= 0 ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="18 15 12 9 6 15"/></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14"><polyline points="6 9 12 15 18 9"/></svg>
-            )}
-            {Math.abs(declines_trend || 0).toFixed(1)}% vs last week
-          </div>
+          <div className="stat-label">Total Nodes</div>
+          <div className="stat-value">{offers.reduce((sum, f) => sum + (f.nodes?.length || 0), 0)}</div>
+          <div className="stat-trend neutral">upsell &amp; downsell steps</div>
         </div>
       </div>
 
       {/* Secondary stats row */}
       <div className="secondary-stats">
         <div className="stat-card mini accent-gray">
-          <div className="stat-label">Orders Shown Offer</div>
-          <div className="stat-value small">{Number(total_triggered).toLocaleString()}</div>
-          <div className={`stat-trend ${triggered_trend >= 0 ? 'positive' : 'negative'}`}>
-            {triggered_trend >= 0 ? '↑' : '↓'} {Math.abs(triggered_trend || 0).toFixed(1)}%
-          </div>
+          <div className="stat-label">Active Funnels</div>
+          <div className="stat-value small">{stats?.active_funnels ?? 0}</div>
+          <div className="stat-trend neutral">of {(stats?.total_funnels ?? 0)} total</div>
         </div>
         <div className="stat-card mini accent-gray">
-          <div className="stat-label">Avg Order Value Increase</div>
-          <div className="stat-value small">
-            ${total_accepts > 0 ? (Number(revenue_lifted || 0) / total_accepts).toFixed(2) : '0.00'}
-          </div>
-          <div className="stat-trend neutral">Per accepted upsell</div>
+          <div className="stat-label">Draft Funnels</div>
+          <div className="stat-value small">{stats?.draft_funnels ?? 0}</div>
+          <div className="stat-trend neutral">being configured</div>
         </div>
         <div className="stat-card mini accent-gray">
-          <div className="stat-label">Active Offers</div>
-          <div className="stat-value small">{offers.filter(o => o.active).length}</div>
-          <div className="stat-trend neutral">of {offers.length} total</div>
+          <div className="stat-label">Total Funnels</div>
+          <div className="stat-value small">{stats?.total_funnels ?? 0}</div>
+          <div className="stat-trend neutral">created</div>
         </div>
       </div>
 
@@ -304,26 +283,25 @@ export default function Dashboard({ store, appConfig }) {
           </div>
           {offers.length === 0 ? (
             <div className="empty-card">
-              <p>No offers yet. <button className="link-btn" onClick={() => window.location.hash = '#/offers'}>Create your first offer</button></p>
+              <p>No funnels yet. <button className="link-btn" onClick={() => window.location.hash = '#/offers'}>Create your first funnel</button></p>
             </div>
           ) : (
             <div className="offers-list">
               {offers.slice(0, 5).map(offer => (
                 <div key={offer.id} className="offer-item">
                   <div className="offer-info">
-                    <div className="offer-name">{offer.name || offer.headline || `Offer #${offer.id}`}</div>
+                    <div className="offer-name">{offer.name || offer.headline || `Funnel #${offer.id}`}</div>
                     <div className="offer-meta">
-                      <span className={`type-badge-sm ${offer.offer_type}`}>
-                        {offer.offer_type === 'add_product' ? 'Add to Order' : offer.offer_type === 'warranty' ? 'Warranty' : 'Discount Code'}
+                      <span className={`type-badge-sm ${offer.status || 'draft'}`}>
+                        {offer.status === 'active' ? 'Active' : 'Draft'}
                       </span>
-                      {offer.ab_test_id && <span className="ab-badge">A/B</span>}
-                      · Min ${offer.trigger_min_amount || 0}
+                      · {offer.nodes?.length || 0} step{offer.nodes?.length !== 1 ? 's' : ''}
                     </div>
                   </div>
                   <label className="toggle">
                     <input
                       type="checkbox"
-                      checked={!!offer.active}
+                      checked={offer.status === 'active'}
                       disabled={togglingOfferId === offer.id}
                       onChange={() => toggleOffer(offer)}
                     />
@@ -343,7 +321,7 @@ export default function Dashboard({ store, appConfig }) {
             Open Full Preview
           </button>
         </div>
-        <p style={{color:'#71717a',fontSize:'14px',marginBottom:'16px'}}>This is how your upsell offer appears to customers after checkout:</p>
+          <p style={{color:'#71717a',fontSize:'14px',marginBottom:'16px'}}>This is how your funnel appears to customers after checkout:</p>
         <div className="preview-thumb" onClick={() => window.location.hash = '#/upsell-preview'}>
           <div className="preview-mock">
             <div className="mock-header">

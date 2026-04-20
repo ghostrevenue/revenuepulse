@@ -54,7 +54,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
 
   const searchTimeout = useRef(null);
 
-  // Reset state when modal opens
+  // Reset state and auto-load products when modal opens
   useEffect(() => {
     if (isOpen) {
       setStep('products');
@@ -67,10 +67,12 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
       setSelectedProductIds(new Set());
       setUseSample(false);
       setSampleSearchResults(SAMPLE_PRODUCTS);
+      // Auto-load products immediately — no typing required
+      loadProducts('', null, true);
     }
   }, [isOpen]);
 
-  async function loadProducts(query, cursor = null) {
+  async function loadProducts(query, cursor = null, isInitialLoad = false) {
     setLoading(true);
     setError(null);
     try {
@@ -82,6 +84,7 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
         setSampleSearchResults(results);
         setProducts([]);
         setPageInfo(null);
+        setLoading(false);
         return;
       }
       const data = await api.getShopifyProducts(query, cursor, 25);
@@ -93,14 +96,28 @@ export default function ProductPicker({ isOpen, onClose, onSelect, selectedVaria
         } else {
           setError(data.error);
         }
+        setLoading(false);
+        return;
+      }
+      // On initial load without query, check if empty and switch to sample
+      if (isInitialLoad && !query && (!data.products || data.products.length === 0)) {
+        setUseSample(true);
+        setSampleSearchResults(SAMPLE_PRODUCTS);
+        setLoading(false);
         return;
       }
       setProducts(data.products || []);
       setPageInfo(data.pageInfo || null);
     } catch (e) {
-      setError('Failed to load products: ' + e.message);
-      setUseSample(true);
-      setSampleSearchResults(SAMPLE_PRODUCTS);
+      // On initial load failure, fall back to sample products silently
+      if (isInitialLoad) {
+        setUseSample(true);
+        setSampleSearchResults(SAMPLE_PRODUCTS);
+      } else {
+        setError('Failed to load products: ' + e.message);
+        setUseSample(true);
+        setSampleSearchResults(SAMPLE_PRODUCTS);
+      }
     }
     setLoading(false);
   }

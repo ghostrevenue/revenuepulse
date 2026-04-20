@@ -63,7 +63,6 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
   const [selectedTriggerProducts, setSelectedTriggerProducts] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
   const [andConditions, setAndConditions] = useState([]);
-  const [upsellType, setUpsellType] = useState('post_purchase');
 
   // Picker modals
   const [showProductPicker, setShowProductPicker] = useState(null);
@@ -247,20 +246,13 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
             onChange={e => updateNode(selectedNodeId, { headline: e.target.value })} />
         </div>
 
-        {/* Upsell type */}
+        {/* Upsell type — always post-purchase for now */}
         <div className="field-group">
           <label>Upsell Type</label>
           <div className="radio-group">
             <label className="radio-option">
-              <input type="radio" name="upsellType" value="post_purchase"
-                checked={upsellType === 'post_purchase'}
-                onChange={() => setUpsellType('post_purchase')} />
+              <input type="radio" name="upsellType" value="post_purchase" checked={true} readOnly />
               <span>Post Purchase Upsell</span>
-            </label>
-            <label className="radio-option disabled">
-              <input type="radio" name="upsellType" value="thank_you" disabled />
-              <span>Thank You Page Upsell</span>
-              <span className="coming-soon">Coming soon</span>
             </label>
           </div>
         </div>
@@ -481,53 +473,47 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
         {/* Discount */}
         <div className="field-group">
           <label>Discount</label>
-          <div className="discount-type-row">
-            {['percentage', 'fixed_amount', 'fixed_price'].map(t => (
-              <button
-                key={t}
-                className={`discount-type-btn ${node.discount?.type === t ? 'active' : ''}`}
-                onClick={() => updateNode(node.id, { discount: { ...node.discount, type: t } })}
-              >
-                {t === 'percentage' ? '% Off' : t === 'fixed_amount' ? '$ Off' : 'Fixed Price'}
-              </button>
-            ))}
-          </div>
-          <div className="discount-value-row">
-            <span className="discount-prefix">
-              {node.discount?.type === 'percentage' ? '%' : '$'}
-            </span>
-            <input type="number" min="0"
-              value={node.discount?.value || 0}
-              onChange={e => updateNode(node.id, { discount: { ...node.discount, value: parseFloat(e.target.value) || 0 } })} />
-          </div>
-          {node.discount?.value > 0 && node.product?.original_price && (
-            <div className="discount-preview">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={!!node.discount?.enabled}
+              onChange={e => updateNode(node.id, {
+                discount: {
+                  ...(node.discount || {}),
+                  enabled: e.target.checked,
+                  value: e.target.checked ? (node.discount?.value || 10) : 0,
+                  type: 'percentage',
+                }
+              })}
+            />
+            Apply discount
+          </label>
+          {node.discount?.enabled && (
+            <div className="discount-value-row" style={{ marginTop: '8px' }}>
+              <span className="discount-prefix">%</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder="10"
+                value={node.discount?.value || 0}
+                onChange={e => updateNode(node.id, {
+                  discount: { ...node.discount, value: Math.min(100, parseFloat(e.target.value) || 0) }
+                })}
+              />
+              <span style={{ fontSize: '13px', color: '#71717a' }}>off</span>
+            </div>
+          )}
+          {node.discount?.enabled && node.discount?.value > 0 && node.product?.original_price && (
+            <div className="discount-preview" style={{ marginTop: '6px' }}>
               {(() => {
-                // Use compare_at_price as original if checkbox is checked (Bug 4 fix)
                 const compareAtPrice = node.product.compare_at_price;
                 const useCompareAt = node.discount?.use_compare_at_price && compareAtPrice;
                 const orig = parseFloat(useCompareAt ? compareAtPrice : node.product.original_price);
-                const disc = node.discount.type === 'percentage'
-                  ? orig * (1 - node.discount.value / 100)
-                  : node.discount.type === 'fixed_amount'
-                  ? orig - node.discount.value
-                  : node.discount.value;
+                const disc = orig * (1 - node.discount.value / 100);
                 return <>Customer pays <strong>${disc.toFixed(2)}</strong> (was ${orig.toFixed(2)})</>;
               })()}
             </div>
-          )}
-          {/* Compare-at price checkbox (Bug 4 fix) */}
-          {node.product?.compare_at_price && (
-            <label className="toggle-label" style={{ marginTop: '8px', fontSize: '13px', color: '#a1a1aa' }}>
-              <input
-                type="checkbox"
-                checked={node.discount?.use_compare_at_price || false}
-                onChange={e => updateNode(node.id, {
-                  discount: { ...node.discount, use_compare_at_price: e.target.checked }
-                })}
-              />
-              Use compare-at price as original ({node.product.compare_at_price})
-            </label>
           )}
         </div>
 
@@ -728,14 +714,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
                 </React.Fragment>
               );
             })}
-            {/* Save button in step nav area (Bug 3 fix) */}
-            <button
-              className="ob-save-sm"
-              onClick={() => handleSave(funnel)}
-              disabled={saveStatus === 'saving'}
-            >
-              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? '⚠ Error' : 'Save'}
-            </button>
+            {/* Save is handled by the Done button only */}
           </div>
           {/* Step content */}
           <div className="ob-scroll-area">
@@ -859,9 +838,8 @@ const OB_CSS = `
 .ob-step.active .ob-step-num { background: #8b5cf6; border-color: #8b5cf6; color: white; }
 .ob-step-line { flex: 1; height: 2px; background: #27272a; margin: 0 8px; align-self: center; }
 .ob-step.done .ob-step-line { background: #22c55e; }
-.ob-save-sm { background: #27272a; border: 1px solid #3f3f46; color: #a1a1aa; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; margin-left: 12px; }
-.ob-save-sm:hover { background: #3f3f46; color: #fafafa; border-color: #52525b; }
-.ob-save-sm:disabled { opacity: 0.6; cursor: not-allowed; }
+.ob-next { background: #8b5cf6; border: none; color: white; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.ob-next:hover { background: #7c3aed; }
 
 /* Step content */
 .wizard-step-content { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -884,7 +862,6 @@ const OB_CSS = `
 .radio-option:hover { border-color: #3f3f46; color: #fafafa; }
 .radio-option input { accent-color: #8b5cf6; width: 16px; height: 16px; }
 .radio-option.disabled { opacity: 0.5; cursor: not-allowed; }
-.coming-soon { font-size: 10px; background: #f59e0b; color: #000; padding: 1px 6px; border-radius: 4px; font-weight: 700; margin-left: auto; }
 
 /* Toggle/checkbox labels */
 .toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }

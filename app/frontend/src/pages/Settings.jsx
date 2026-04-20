@@ -2,10 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api/index.js';
 
 export default function Settings({ store, appConfig }) {
-  const [plan, setPlan] = useState(null);
-  const [plans, setPlans] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState(null);
 
   // Notification preferences (localStorage — no backend needed yet)
   const [notifications, setNotifications] = useState(() => {
@@ -43,47 +40,14 @@ export default function Settings({ store, appConfig }) {
 
   useEffect(() => {
     if (!store) { setLoading(false); return; }
-    async function load() {
-      try {
-        // Add timeout to prevent indefinite hang on slow/unresponsive API
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
-        );
-        const [planData, plansData] = await Promise.race([
-          Promise.all([
-            api.getPlan(),
-            api.getPlans()
-          ]),
-          timeoutPromise
-        ]).catch(e => {
-          console.warn('Settings load warning:', e.message);
-          // Return null data so UI can still render partially
-          return [{ plan: { name: 'Pro', price: 20, planKey: 'pro' } }, { plans: { pro: CURRENT_PLAN } }];
-        });
-        setPlan(planData);
-        setPlans(plansData.plans);
-      } catch (e) {
-        console.error(e.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    setLoading(false);
   }, [store]);
-
-  // Fallback plans for when API fails (object keyed by planKey matching API response)
-  const CURRENT_PLAN = {
-    name: 'Pro',
-    price: 20,
-    planKey: 'pro',
-    features: ['Unlimited upsell funnels', 'A/B testing', 'Real-time analytics', 'Priority support'],
-  };
 
   if (!store) {
     return (
       <div className="empty-state">
-        <h3 style={{fontSize:'18px',fontWeight:600,color:'#fafafa',marginBottom:'8px'}}>Connect Your Store</h3>
-        <p style={{color:'#71717a'}}>Connect your Shopify store to manage settings.</p>
+        <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#fafafa', marginBottom: '8px' }}>Connect Your Store</h3>
+        <p style={{ color: '#71717a' }}>Connect your Shopify store to manage settings.</p>
       </div>
     );
   }
@@ -102,39 +66,7 @@ export default function Settings({ store, appConfig }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">Settings</h1>
-          <p className="page-subtitle">Manage your plan and preferences</p>
-        </div>
-      </div>
-
-      {/* Plan */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">Subscription Plan</div>
-          <span className="current-plan-badge">
-            {plan?.plan?.name || 'Pro'} — ${plan?.plan?.price || 20}/mo
-          </span>
-        </div>
-
-        {message && (
-          <div className={`alert-banner ${message.type}`}>
-            {message.text}
-          </div>
-        )}
-
-        <div className="single-plan-card">
-          <div className="plan-name">{CURRENT_PLAN.name}</div>
-          <div className="plan-price">${CURRENT_PLAN.price}<span>/mo</span></div>
-          <ul className="plan-features">
-            {CURRENT_PLAN.features.map((f, i) => (
-              <li key={i}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                {f}
-              </li>
-            ))}
-          </ul>
-          <div className="plan-current-badge">✓ Your current plan</div>
+          <p className="page-subtitle">Configure your app experience</p>
         </div>
       </div>
 
@@ -165,6 +97,7 @@ export default function Settings({ store, appConfig }) {
       <div className="card">
         <div className="card-header">
           <div className="card-title">Notification Preferences</div>
+          {notifSaved && <span style={{ fontSize: '12px', color: '#22c55e' }}>✓ Saved</span>}
         </div>
         <div className="notif-list">
           {[
@@ -229,20 +162,6 @@ export default function Settings({ store, appConfig }) {
         .card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .card-title { font-size: 15px; font-weight: 600; color: #fafafa; }
-        .current-plan-badge { font-size: 13px; color: #a78bfa; background: rgba(139,92,246,0.12); padding: 4px 12px; border-radius: 9999px; }
-
-        .alert-banner { border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 14px; }
-        .alert-banner.success { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
-        .alert-banner.error { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
-
-        .single-plan-card { background: #0f0f14; border: 1px solid #8b5cf6; border-radius: 12px; padding: 24px; max-width: 400px; }
-        .plan-name { font-size: 18px; font-weight: 700; color: #fafafa; margin-bottom: 6px; }
-        .plan-price { font-size: 32px; font-weight: 700; color: #a78bfa; margin-bottom: 16px; }
-        .plan-price span { font-size: 16px; color: #71717a; font-weight: 400; }
-        .plan-features { list-style: none; margin: 0 0 16px; padding: 0; }
-        .plan-features li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #a1a1aa; padding: 5px 0; }
-        .plan-features li svg { color: #22c55e; flex-shrink: 0; }
-        .plan-current-badge { display: inline-block; background: rgba(34,197,94,0.12); color: #22c55e; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 6px; }
 
         .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
         .info-item { }
@@ -256,7 +175,6 @@ export default function Settings({ store, appConfig }) {
         @keyframes spin { to { transform: rotate(360deg); } }
 
         @media (max-width: 700px) {
-          .plans-grid { grid-template-columns: 1fr; }
           .info-grid { grid-template-columns: 1fr; }
         }
 
@@ -294,6 +212,9 @@ export default function Settings({ store, appConfig }) {
         .btn-cancel { padding: 8px 18px; background: #27272a; color: #a1a1aa; border: 1px solid #3f3f46; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .btn-cancel:hover { background: #3f3f46; color: #fafafa; }
         .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+        .alert-banner { border-radius: 8px; padding: 12px 16px; font-size: 14px; }
+        .alert-banner.success { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+        .alert-banner.error { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
       `}</style>
     </div>
   );

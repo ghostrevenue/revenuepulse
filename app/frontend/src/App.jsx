@@ -39,10 +39,12 @@ function Sidebar({ activePage, setActivePage, store }) {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
+          <svg viewBox="0 0 32 32" fill="none" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+            {/* Shopping bag with upward arrow — post-purchase upsell symbol */}
+            <rect x="6" y="12" width="20" height="17" rx="3" fill="#8b5cf6" opacity="0.15" stroke="#a78bfa" strokeWidth="1.8"/>
+            <path d="M11 12V9a5 5 0 0110 0v3" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round"/>
+            {/* Upward arrow inside bag — revenue lift */}
+            <path d="M16 21V15M13.5 17.5L16 15l2.5 2.5" stroke="#22c55e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           PostPurchasePro
         </div>
