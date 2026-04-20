@@ -1,23 +1,22 @@
-# RevenuePulse - Shopify Revenue Analytics App
+# PostPurchasePro - Shopify Post-Purchase Upsell App
 
 ## Overview
 
-RevenuePulse is an embedded Shopify app that provides real-time revenue analytics dashboards for Shopify merchants. It tracks daily revenue, orders, and average order values with trend analysis.
+PostPurchasePro is an embedded Shopify app that enables merchants to create and manage post-purchase upsell funnels. Merchants define trigger conditions (products, collections, order value thresholds) and build multi-step funnel sequences with discount offers shown to customers immediately after checkout.
 
 ## Features
 
 ### Core Features
-- **Revenue Dashboard** - 30/60/90-day revenue summaries with daily breakdowns
-- **Trend Analytics** - Period-over-period comparisons and growth indicators
-- **GDPR Compliance** - Three mandatory webhook handlers for data privacy
-- **Billing Integration** - Shopify Billing API for subscription management ($19-99/mo)
+- **Upsell Funnel Builder** — Multi-step funnel sequences with trigger conditions and discount nodes
+- **Dashboard** — Overview of funnel performance and store metrics
+- **Analytics** — Funnel conversion tracking and revenue attribution
+- **Single Plan** — Unlimited funnels at $20/mo
+- **GDPR Compliance** — Three mandatory webhook handlers for data privacy
 
 ### Plans
 | Plan | Price | Features |
 |------|-------|----------|
-| Starter | $19/mo | 30-day history, daily summaries, email reports |
-| Growth | $49/mo | 90-day history, real-time alerts, CSV export |
-| Pro | $99/mo | Unlimited history, API access, webhooks, priority support |
+| Pro | $20/mo | Unlimited upsell funnels, A/B testing, real-time analytics, priority support |
 
 ## Technical Stack
 
@@ -25,7 +24,7 @@ RevenuePulse is an embedded Shopify app that provides real-time revenue analytic
 - **Framework**: Express.js
 - **Database**: SQLite (dev) → PostgreSQL on Railway (prod)
 - **Frontend**: React 18 (CDN-loaded, no build step)
-- **Authentication**: Shopify session token validation (replaces cookie-based)
+- **Authentication**: Shopify session token validation (embedded app)
 - **Port**: 3000
 
 ## API Endpoints
@@ -34,18 +33,21 @@ RevenuePulse is an embedded Shopify app that provides real-time revenue analytic
 - `POST /api/auth/session/verify` - Verify Shopify session token
 - `GET /api/auth/callback` - OAuth callback
 
-### Revenue
-- `GET /api/revenue/summary?days=30` - Revenue summary
-- `GET /api/revenue/daily?days=30` - Daily revenue data
-- `GET /api/revenue/latest` - Most recent day
-- `POST /api/revenue/seed` - Generate demo data
-- `POST /api/revenue/sync` - Sync revenue from Shopify
+### Funnels
+- `GET /api/funnels` - List all funnels for a store
+- `POST /api/funnels` - Create a new funnel
+- `GET /api/funnels/:id` - Get funnel details
+- `PUT /api/funnels/:id` - Update a funnel
+- `DELETE /api/funnels/:id` - Delete a funnel
+
+### Dashboard
+- `GET /api/dashboard/summary` - Dashboard summary metrics
+- `GET /api/dashboard/revenue-history` - Revenue history data
 
 ### Billing
-- `GET /api/billing/plan` - Current plan
-- `POST /api/billing/plan` - Update plan
-- `GET /api/billing/plans` - All plans
-- `POST /api/billing/charges` - Create Shopify billing charge
+- `GET /api/billing/plan` - Current plan ($20/mo Pro)
+- `POST /api/billing/plan` - Activate subscription
+- `GET /api/billing/plans` - Available plans (single Pro plan)
 
 ### GDPR Webhooks (mandatory)
 - `POST /webhooks/customers/data_request` - Customer data export request
@@ -55,8 +57,8 @@ RevenuePulse is an embedded Shopify app that provides real-time revenue analytic
 ## Environment Variables
 
 ```
-SHOPIFY_API_KEY=your_shopify_api_key
-SHOPIFY_API_SECRET=your_shopify_api_secret
+SHOPIFY_API_KEY=your_s..._key
+SHOPIFY_API_SECRET=your_s...cret
 APP_URL=https://revenuepulse.up.railway.app
 APP_PORT=3000
 NODE_ENV=production
@@ -74,22 +76,24 @@ DATABASE_URL=postgresql://...  # Railway Postgres
 | scope | TEXT | OAuth scope |
 | created_at | TIMESTAMP | Creation time |
 
-### revenue_data
+### funnels
 | Column | Type | Description |
 |--------|------|-------------|
-| id | SERIAL PK | Auto-increment |
+| id | TEXT PK | UUID |
 | store_id | TEXT FK | References stores |
-| date | DATE | Revenue date |
-| revenue | REAL | Total revenue |
-| orders | INTEGER | Order count |
-| average_order_value | REAL | AOV |
+| name | TEXT | Funnel name |
+| status | TEXT | active/draft |
+| trigger | JSONB | Trigger conditions |
+| nodes | JSONB | Funnel step nodes |
+| created_at | TIMESTAMP | Creation time |
+| updated_at | TIMESTAMP | Last update |
 
 ### billing
 | Column | Type | Description |
 |--------|------|-------------|
 | id | SERIAL PK | Auto-increment |
 | store_id | TEXT FK | References stores |
-| plan | TEXT | starter/growth/pro |
+| plan | TEXT | pro |
 | status | TEXT | active/trial |
 
 ### gdpr_logs

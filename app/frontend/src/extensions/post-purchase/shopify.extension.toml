@@ -1,7 +1,7 @@
 api_version = "2024-01"
-name = "RevenuePulse Post Purchase"
+name = "PostPurchasePro Post Purchase"
 [[extensions]]
-name = "RevenuePulse Post Purchase"
+name = "PostPurchasePro Post Purchase"
 type = "checkout_ui"
 handle = "revenuepulse-post-purchase"
 

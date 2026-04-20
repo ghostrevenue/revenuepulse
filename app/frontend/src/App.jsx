@@ -3,14 +3,14 @@ import { api } from './api/index.js';
 import Dashboard from './pages/Dashboard.jsx';
 import Analytics from './pages/Analytics.jsx';
 import Billing from './pages/Billing.jsx';
-import OfferBuilder from './pages/OfferBuilder.jsx';
+import OffersList from './pages/OffersList.jsx';
 import UpsellConfirmation from './pages/UpsellConfirmation.jsx';
 import UpsellPreview from './pages/UpsellPreview.jsx';
 import Settings from './pages/Settings.jsx';
 
 const ROUTES = {
   '#/dashboard': Dashboard,
-  '#/offers': OfferBuilder,
+  '#/offers': OffersList,
   '#/analytics': Analytics,
   '#/billing': Billing,
   '#/settings': Settings,
@@ -44,7 +44,7 @@ function Sidebar({ activePage, setActivePage, store }) {
             <path d="M2 17l10 5 10-5"/>
             <path d="M2 12l10 5 10-5"/>
           </svg>
-          RevenuePulse
+          PostPurchasePro
         </div>
       </div>
       <nav className="nav">
@@ -74,19 +74,18 @@ export default function App() {
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appConfig, setAppConfig] = useState(null);
-  const [funnel, setFunnel] = useState(null);
 
   // Hash-based routing
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      
+
       // Handle #/upsell-preview/:offerId route
       if (hash && hash.startsWith('#/upsell-preview')) {
         setActivePage('#/upsell-preview');
         return;
       }
-      
+
       if (hash && ROUTES[hash]) {
         setActivePage(hash);
       } else if (!hash || hash === '#' || hash === '#/') {
@@ -178,7 +177,7 @@ export default function App() {
       <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#0f0f14',color:'#a78bfa',fontFamily:'Inter,sans-serif',fontSize:'16px'}}>
         <div style={{textAlign:'center'}}>
           <div style={{width:'48px',height:'48px',border:'3px solid #2d2d3a',borderTopColor:'#8b5cf6',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}} />
-          Loading RevenuePulse...
+          Loading PostPurchasePro...
         </div>
       </div>
     );
@@ -190,25 +189,7 @@ export default function App() {
     <div className="app-layout">
       <Sidebar activePage={activePage} setActivePage={(page) => { setActivePage(page); window.location.hash = page; }} store={store} />
       <main className="main-content">
-        {activePage === '#/offers' ? (
-          <OfferBuilder funnel={funnel || { id: null, name: 'Untitled Funnel', status: 'draft', nodes: [] }} onSave={async (updated) => {
-            try {
-              if (updated.id) {
-                const result = await api.updateFunnel(updated.id, updated);
-                setFunnel(result.funnel || result);
-              } else {
-                const result = await api.createFunnel(updated);
-                setFunnel(result.funnel || result);
-              }
-            } catch (e) {
-              console.error('Failed to persist funnel:', e.message);
-              // Still update local state so UI doesn't get stuck
-              setFunnel(updated);
-            }
-          }} onClose={() => { setFunnel(null); setActivePage('#/dashboard'); }} />
-        ) : (
-          <PageComponent store={store} appConfig={appConfig} />
-        )}
+        <PageComponent store={store} appConfig={appConfig} />
       </main>
     </div>
   );

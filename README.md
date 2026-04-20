@@ -1,4 +1,4 @@
-# RevenuePulse
+# PostPurchasePro
 
 Revenue analytics dashboard for Shopify merchants.
 

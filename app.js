@@ -111,7 +111,7 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    app: 'RevenuePulse',
+    app: 'PostPurchasePro',
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
     postgres: !!process.env.DATABASE_URL
@@ -130,7 +130,7 @@ app.get('/debug/env', (req, res) => {
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`RevenuePulse app running on port ${PORT}`);
+  console.log(`PostPurchasePro app running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Database: ${process.env.DATABASE_URL ? 'PostgreSQL (Railway)' : 'SQLite (local)'}`);
 });

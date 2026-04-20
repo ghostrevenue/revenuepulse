@@ -753,7 +753,7 @@ export default function OfferBuilder({ funnel, onSave, onClose }) {
             {activeStep < 3 ? (
               <button className="ob-next" onClick={() => setActiveStep(s => s + 1)}>Next Step →</button>
             ) : (
-              <button className="ob-next" onClick={() => { if (onClose) onClose(); }}>Done</button>
+              <button className="ob-next" onClick={() => handleSave(funnel)}>Done</button>
             )}
           </div>
         </div>

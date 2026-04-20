@@ -87,7 +87,7 @@ export default function Dashboard({ store, appConfig }) {
           <circle cx="12" cy="12" r="3"/>
         </svg>
         <h3 style={{fontSize:'18px',fontWeight:600,color:'#fafafa',marginBottom:'8px'}}>Connect Your Store</h3>
-        <p style={{color:'#71717a',marginBottom:'16px'}}>Install RevenuePulse in your Shopify store to start boosting revenue with post-purchase upsells.</p>
+        <p style={{color:'#71717a',marginBottom:'16px'}}>Install PostPurchasePro in your Shopify store to start boosting revenue with post-purchase upsells.</p>
         <p style={{fontSize:'12px',color:'#52525b'}}>
           API Key: {appConfig?.apiKey ? '✓ ' + appConfig.apiKey.substring(0,8)+'...' : '✗ Not set'}
         </p>

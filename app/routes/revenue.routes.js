@@ -60,27 +60,6 @@ router.get('/latest', verifyShop, async (req, res) => {
   });
 });
 
-// Seed mock revenue data for a store (for demo/testing)
-router.post('/seed', verifyShop, async (req, res) => {
-  const storeId = req.store.id;
-  const today = new Date();
-
-  // Generate 90 days of mock data
-  for (let i = 0; i < 90; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-
-    const orders = Math.floor(Math.random() * 50) + 10;
-    const aov = Math.random() * 100 + 30;
-    const revenue = orders * aov;
-
-    await RevenueModel.upsert(storeId, dateStr, Math.round(revenue * 100) / 100, orders, Math.round(aov * 100) / 100);
-  }
-
-  res.json({ success: true, message: 'Seed data created for 90 days' });
-});
-
 // Upsert revenue for a specific date (called by webhook or sync)
 router.post('/sync', verifyShop, async (req, res) => {
   const { date, revenue, orders, average_order_value } = req.body;

@@ -116,7 +116,7 @@ function PostPurchaseExtension() {
               : currentNode.discount.type === 'fixed_amount'
               ? { fixed_amount: currentNode.discount.value }
               : { fixed_price: currentNode.discount.value },
-            title: 'RevenuePulse Upsell',
+            title: 'PostPurchasePro Upsell',
           },
         }],
       };

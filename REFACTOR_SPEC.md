@@ -1,4 +1,4 @@
-# RevenuePulse Post-Purchase Upsell — Refactor Spec
+# PostPurchasePro Post-Purchase Upsell — Refactor Spec
 
 ## Core Mechanic (correct model)
 
@@ -262,7 +262,7 @@ Columns: Node #, Product, Impressions, Accept %, Revenue, Actions
 ### Shopify Extension Manifest (`shopify.extension.toml`)
 ```toml
 api_version = "2024-01"
-name = "RevenuePulse Post Purchase"
+name = "PostPurchasePro Post Purchase"
 [target.purchase.post.render]
 resource = "checkout"
 ```
@@ -273,7 +273,7 @@ import { useEffect, useState } from 'react';
 import { render, extend, BlockStack, Text, Image, Button, useQuantity, useApplyChangeset, useCartLines } from '@shopify/checkout-ui-extensions';
 
 extend('purchase.post.render', (root) => {
-  // Fetch offer from RevenuePulse API using checkout token
+  // Fetch offer from PostPurchasePro API using checkout token
   // Render offer UI
   // On accept: call CalculateChangeset then ApplyChangeset
   // On decline: call extension.done() to proceed to thank you

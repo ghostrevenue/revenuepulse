@@ -5,26 +5,12 @@ import db from '../models/db.js';
 
 const router = express.Router();
 
-// Shopify Billing API — plan definitions
-export const PLANS = {
-  starter: {
-    name: 'Starter',
-    price: 19,
-    features: ['30-day revenue history', 'daily summaries', 'email reports'],
-    planKey: 'starter'
-  },
-  growth: {
-    name: 'Growth',
-    price: 49,
-    features: ['90-day revenue history', 'real-time alerts', 'export to CSV', 'custom date ranges'],
-    planKey: 'growth'
-  },
-  pro: {
-    name: 'Pro',
-    price: 99,
-    features: ['unlimited history', 'API access', 'webhook integrations', 'priority support', 'multi-store'],
-    planKey: 'pro'
-  }
+// Single plan — $20/mo
+export const PLAN = {
+  name: 'Pro',
+  price: 20,
+  planKey: 'pro',
+  features: ['Unlimited upsell funnels', 'A/B testing', 'Real-time analytics', 'Priority support'],
 };
 
 // Middleware: verify session token and extract store (async)
@@ -51,42 +37,28 @@ async function verifySession(req, res, next) {
 // Get current plan
 router.get('/plan', verifySession, async (req, res) => {
   const billing = await BillingModel.findByStore(req.store.id);
-  const plan = billing ? PLANS[billing.plan] : PLANS.starter;
-
   res.json({
-    plan,
-    status: billing?.status || 'trial',
+    plan: PLAN,
+    status: billing?.status || 'active',
     store_id: req.store.id,
     shop: req.store.shop
   });
 });
 
-// Update plan — initiate Shopify billing charge
+// Subscribe to plan — activate billing
 router.post('/plan', verifySession, async (req, res) => {
-  const { plan: planKey } = req.body;
-
-  if (!PLANS[planKey]) {
-    return res.status(400).json({ error: 'Invalid plan. Choose: starter, growth, or pro' });
-  }
-
-  const plan = PLANS[planKey];
-
-  // In production: create Shopify billing charge via Billing API
-  // For now: update local billing record
-  await BillingModel.upsert(req.store.id, planKey, 'active');
-
+  // Always activate the single $20/mo plan
+  await BillingModel.upsert(req.store.id, 'pro', 'active');
   res.json({
     success: true,
-    plan,
-    message: `Subscribed to ${plan.name} plan ($${plan.price}/mo)`,
-    // In production: include confirmation_url from Shopify
-    confirmation_url: `${getAppUrl()}/billing/confirmed?plan=${planKey}`
+    plan: PLAN,
+    message: `Subscribed to ${PLAN.name} plan ($${PLAN.price}/mo)`,
   });
 });
 
 // Get all available plans
 router.get('/plans', (req, res) => {
-  res.json({ plans: PLANS });
+  res.json({ plans: { pro: PLAN } });
 });
 
 // DELETE /api/billing/uninstall — uninstall the app from the store
@@ -113,26 +85,22 @@ function getAppUrl() {
 // In production, this would call Shopify's Billing API:
 // POST /admin/api/2024-01/recurring_application_charges.json
 router.post('/charges', verifySession, async (req, res) => {
-  const { plan: planKey } = req.body;
-  if (!PLANS[planKey]) return res.status(400).json({ error: 'Invalid plan' });
-
-  const plan = PLANS[planKey];
   const appUrl = getAppUrl();
 
-  // Shopify recurring charge structure
+  // Shopify recurring charge structure — single $20/mo plan
   const charge = {
-    name: `RevenuePulse ${plan.name}`,
-    price: plan.price,
+    name: `PostPurchasePro ${PLAN.name}`,
+    price: PLAN.price,
     interval: 'every_30_days',
     return_url: `${appUrl}/billing/callback`,
-    terms: `Revenue analytics dashboard - ${plan.features.join(', ')}`
+    terms: PLAN.features.join(', ')
   };
 
   // In production: POST to Shopify Billing API
   // For now: return mock charge URL
   res.json({
     charge,
-    confirmation_url: `${appUrl}/billing/confirmed?plan=${planKey}&store=${req.store.shop}`,
+    confirmation_url: `${appUrl}/billing/confirmed?plan=pro&store=${req.store.shop}`,
     note: 'Production: would create Shopify recurring_application_charge'
   });
 });

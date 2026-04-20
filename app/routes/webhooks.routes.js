@@ -82,7 +82,7 @@ router.post('/customers/redact', verifyShopifyWebhook, async (req, res) => {
   }
 
   // In production: redact/anonymize customer data from the app's database
-  // RevenuePulse stores aggregate data, not PII — mark for deletion
+  // PostPurchasePro stores aggregate data, not PII — mark for deletion
   res.status(200).json({
     success: true,
     message: 'Customer data redaction acknowledged',
